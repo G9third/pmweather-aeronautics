@@ -23,7 +23,7 @@ That means Sable's existing wing math naturally sees:
 
 ### Optional v0.0.1 body-push path
 
-The original center-of-mass push system is still included, but it now defaults to disabled. Enable `enableBodyPush` in the config if you also want the whole sub-level to be shoved by wind.
+The original center-of-mass push system is still included and now defaults to enabled. Set `enableBodyPush` to `false` in the config if you want pure lift/drag airflow integration without pushing the whole sub-level.
 
 When body push is enabled, the mod:
 
