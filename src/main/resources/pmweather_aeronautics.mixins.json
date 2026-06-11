@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "com.axes.pmweather_aeronautics.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "minVersion": "0.8",
+  "mixins": [
+    "BlockSubLevelLiftProviderMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
