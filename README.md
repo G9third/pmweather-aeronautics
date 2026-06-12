@@ -4,7 +4,7 @@ Starter NeoForge 1.21.1 addon that applies ProtoManly's Weather wind to Sable/Cr
 
 ## What it does
 
-### v0.0.2 airflow path
+### v0.1 airflow path
 
 This version adds the deeper aerodynamic integration. It mixins into:
 
@@ -21,7 +21,7 @@ That means Sable's existing wing math naturally sees:
 - crosswind as sideways airflow over fins/rudders/stabilizers,
 - storm/tornado wind as stronger local airflow if PMWeather reports it.
 
-### Optional v0.0.1 body-push path
+### Optional body-push path
 
 The original center-of-mass push system is still included and now defaults to enabled. Set `enableBodyPush` to `false` in the config if you want pure lift/drag airflow integration without pushing the whole sub-level.
 
