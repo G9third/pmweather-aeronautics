@@ -1,3 +1,13 @@
 {
-  "pmweather_aeronautics.mod_name": "PMWeather Aeronautics"
+  "pmweather_aeronautics.mod_name": "PMWeather Aeronautics",
+  "pmweather_aeronautics.configuration.windThreshold": "Wind Threshold",
+  "pmweather_aeronautics.configuration.enableAirflowLift": "Enable Airflow Lift",
+  "pmweather_aeronautics.configuration.airflowInfluence": "Airflow Influence",
+  "pmweather_aeronautics.configuration.enableBodyPush": "Enable Body Push",
+  "pmweather_aeronautics.configuration.windInfluence": "Body Push Strength",
+  "pmweather_aeronautics.configuration.massScaling": "Mass Scaling",
+  "pmweather_aeronautics.configuration.maxImpulsePerSubstep": "Max Impulse Per Substep",
+  "pmweather_aeronautics.configuration.turbulenceMultiplier": "Turbulence Multiplier",
+  "pmweather_aeronautics.configuration.enableTornadoSuction": "Enable Tornado Suction",
+  "pmweather_aeronautics.configuration.debugLogging": "Debug Logging"
 }
