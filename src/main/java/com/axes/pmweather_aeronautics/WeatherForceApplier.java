@@ -63,7 +63,7 @@ public final class WeatherForceApplier {
                 subLevel.getLevel(),
                 false,
                 !Config.ENABLE_TORNADO_SUCTION.get(),
-                true
+                false
         );
 
         final double rawWindSpeed = sampledWind.length();
