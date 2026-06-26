@@ -6,8 +6,8 @@ license = "MIT"
 modId = "${mod_id}"
 version = "${mod_version}"
 displayName = "${mod_name}"
-authors = "Generated starter addon"
-description = '''Applies ProtoManly's Weather wind to Sable/Create Aeronautics sub-level physics.'''
+authors = "G9third / generated rewrite"
+description = '''Applies ProtoManly's Weather wind to Sable 2.x/Create Aeronautics sub-level physics using a 0.7 exterior surface cache, local lift-provider airflow, and capped differential pressure torque.'''
 
 [[mixins]]
 config = "pmweather_aeronautics.mixins.json"
@@ -15,7 +15,7 @@ config = "pmweather_aeronautics.mixins.json"
 [[dependencies.${mod_id}]]
 modId = "neoforge"
 type = "required"
-versionRange = "[21.1.147,)"
+versionRange = "[21.1.228,)"
 ordering = "NONE"
 side = "BOTH"
 
@@ -29,14 +29,14 @@ side = "BOTH"
 [[dependencies.${mod_id}]]
 modId = "sable"
 type = "required"
-versionRange = "[1.2.1,)"
+versionRange = "[2.0.3,3.0.0)"
 ordering = "AFTER"
 side = "BOTH"
 
 [[dependencies.${mod_id}]]
 modId = "pmweather"
 type = "required"
-versionRange = "[0.16.0,)"
+versionRange = "[0.16.4,)"
 ordering = "AFTER"
 side = "BOTH"
 

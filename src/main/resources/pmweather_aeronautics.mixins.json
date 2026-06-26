@@ -4,9 +4,10 @@
   "compatibilityLevel": "JAVA_21",
   "minVersion": "0.8",
   "mixins": [
-    "BlockSubLevelLiftProviderMixin"
+    "BlockSubLevelLiftProviderMixin",
+    "LevelPlotAeroCacheMixin"
   ],
   "injectors": {
-    "defaultRequire": 1
+    "defaultRequire": 0
   }
 }

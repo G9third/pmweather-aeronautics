@@ -1,24 +1,24 @@
 plugins {
     id 'java-library'
-    id 'net.neoforged.moddev' version '2.0.107'
+    id 'net.neoforged.moddev' version '2.0.140'
 }
 
 version = mod_version
 group = mod_group_id
 
-base { archivesName = mod_id }
+base {
+    archivesName = mod_id
+}
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 repositories {
     mavenCentral()
-    maven { name = 'RyanHCode'; url = 'https://maven.ryanhcode.dev/releases' }
-    maven { name = 'BlameJared'; url = 'https://maven.blamejared.com' }
     maven { name = 'NeoForge'; url = 'https://maven.neoforged.net/releases' }
     maven { name = 'Sponge'; url = 'https://repo.spongepowered.org/repository/maven-public' }
+    maven { name = 'RyanHCode'; url = 'https://maven.ryanhcode.dev/releases' }
     maven { name = 'Modrinth'; url = 'https://api.modrinth.com/maven' }
     maven { name = 'CurseMaven'; url = 'https://cursemaven.com' }
-    flatDir { dirs 'libs' }
 }
 
 neoForge {
@@ -41,27 +41,98 @@ neoForge {
     }
 }
 
-// In a real workspace, prefer proper Maven coordinates for these mods.
-// For quick local compilation, place these jars in ./libs/:
-// - sable-neoforge jar
-// - create-aeronautics / aeronautics-bundled jar
-// - pmweather jar
-dependencies {
-    compileOnly name: 'pmweather-0.16.4-1.21.1-alpha'
-    compileOnly name: 'sable-neoforge-1.21.1-1.2.2'
-    compileOnly name: 'create-aeronautics-bundled-1.21.1-1.2.1'
+def libsDir = file('libs')
+def localJars = libsDir.exists() ? fileTree(dir: libsDir, include: ['*.jar']) : files()
+def extractedCompanionDir = file("$buildDir/extracted-sable-companion-jars")
+def extractedCompanionJars = fileTree(dir: extractedCompanionDir, include: ['**/*.jar'])
 
-    // Sable's release jar contains/loads these at runtime, but Gradle does not expose
-    // nested JarJar libraries from a flatDir jar on our compile classpath. Add them
-    // explicitly so classes referenced by Sable's public API compile.
-    compileOnly 'dev.ryanhcode.sable-companion:sable-companion-common-1.21.1:1.6.0'
-    compileOnly 'foundry.veil:veil-neoforge-1.21.1:4.1.1'
+def localJarNames = { -> localJars.files.collect { it.name.toLowerCase(Locale.ROOT) } }
+def hasLocalJarMatching = { List<String> terms ->
+    localJarNames().any { name -> terms.every { term -> name.contains(term.toLowerCase(Locale.ROOT)) } }
+}
+def hasLocalSableJar = { ->
+    localJarNames().any { name -> name.contains('sable') && !name.contains('companion') && name.contains(sable_version) }
+}
+
+dependencies {
+    // Always add jars from ./libs first. This lets you build even when a third-party Maven is down.
+    compileOnly localJars
+
+    // If Sable bundles Sable Companion as a nested JarJar dependency, extract it for javac.
+    // Runtime does not need a separate Companion jar if Sable already bundles/provides it.
+    compileOnly extractedCompanionJars
+
+    // Sable 2.0.3. Prefer libs/sable-neoforge-1.21.1-2.0.3.jar, then fall back to CurseMaven.
+    if (!hasLocalSableJar()) {
+        compileOnly("curse.maven:sable-1312371:${sable_curse_file_id}") { transitive = false }
+    }
+
+    // Sable 2 classes reference Sable Companion types like Pose3d/SubLevelAccess.
+    // This build extracts Companion from a local Sable jar if Sable bundled it.
+    // If your Sable jar does not contain it, put a separate Sable Companion jar in ./libs.
+
+    // ProtoManly's Weather. Prefer a local PMWeather jar; fall back to Modrinth Maven.
+    if (!hasLocalJarMatching(['pmweather']) && !hasLocalJarMatching(['protomanly'])) {
+        compileOnly("maven.modrinth:protomanlys-weather:${pmweather_version}") { transitive = false }
+    }
+}
+
+
+tasks.register('extractBundledSableCompanion') {
+    inputs.files localJars
+    outputs.dir extractedCompanionDir
+
+    doLast {
+        def outDir = extractedCompanionDir
+        delete outDir
+        outDir.mkdirs()
+
+        localJars.files.findAll { jar ->
+            def name = jar.name.toLowerCase(Locale.ROOT)
+            name.contains('sable') && !name.contains('companion')
+        }.each { jar ->
+            copy {
+                from(zipTree(jar)) {
+                    include '**/*.jar'
+                    includeEmptyDirs = false
+                    eachFile { details ->
+                        def n = details.name.toLowerCase(Locale.ROOT)
+                        def p = details.path.toLowerCase(Locale.ROOT)
+                        if (!(n.contains('companion') || p.contains('companion') || n.contains('sablecompanion') || p.contains('sablecompanion'))) {
+                            details.exclude()
+                        }
+                    }
+                    // Flatten nested JarJar paths so fileTree(..., '**/*.jar') can find them reliably.
+                    eachFile { details -> details.path = details.name }
+                }
+                into outDir
+                duplicatesStrategy = DuplicatesStrategy.INCLUDE
+            }
+        }
+    }
+}
+
+tasks.named('compileJava') {
+    dependsOn tasks.named('extractBundledSableCompanion')
+    doFirst {
+        def names = localJarNames()
+        def hasDirectCompanion = names.any { it.contains('sable-companion') || it.contains('sablecompanion') || it.contains('companion') }
+        def hasExtractedCompanion = extractedCompanionDir.exists()
+                && fileTree(dir: extractedCompanionDir, include: ['**/*.jar']).files.any { it.name.toLowerCase(Locale.ROOT).contains('companion') }
+        if (!hasDirectCompanion && !hasExtractedCompanion) {
+            throw new GradleException("Could not find Sable Companion classes. Your Sable jar did not expose a bundled companion jar to Gradle. Put the Sable jar in ./libs, or put a Sable Companion jar in ./libs if your Sable release ships it separately.")
+        }
+    }
 }
 
 processResources {
     inputs.property 'mod_id', mod_id
     inputs.property 'mod_name', mod_name
     inputs.property 'mod_version', mod_version
+    inputs.property 'minecraft_version', minecraft_version
+    inputs.property 'neoforge_version', neoforge_version
+    inputs.property 'sable_version', sable_version
+
     filesMatching('META-INF/neoforge.mods.toml') {
         expand inputs.properties
     }

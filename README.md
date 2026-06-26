@@ -1,70 +1,43 @@
-# PMWeather Aeronautics Bridge
+# PMWeather Aeronautics Sable2 0.7.0
 
-Starter NeoForge 1.21.1 addon that applies ProtoManly's Weather wind to Sable/Create Aeronautics physics sub-levels.
+PMWeather Aeronautics connects ProtoManly's Weather wind with Sable/Create Aeronautics physics objects.
 
-## What it does
+## 0.7.0 focus
 
-### v0.1 airflow path
+0.7.0 splits the mod into clearer aero systems and restores realistic uneven-pressure torque without returning to the old unstable sparse-sample spin path.
 
-This version adds the deeper aerodynamic integration. It mixins into:
+Main systems:
 
-```text
-dev.ryanhcode.sable.api.block.BlockSubLevelLiftProvider#sable$contributeLiftAndDrag
+- `AeroSurfaceCache` builds and caches exposed exterior Sable surface patches.
+- `WeatherWindField` owns PMWeather wind sampling, interpolation, caching, and fair sample budgets.
+- `SableAeroSolver` turns wind pressure into Sable force/torque with safety caps.
+
+## Main defaults
+
+```toml
+windThreshold = 8.0
+windInfluence = 2.0
+aeroPatchPressureStrength = 1.0
+aeroPatchAreaWeightStrength = 0.65
+maxWindSamplesPerTick = 512
+maxAeroPatchSamplesPerObject = 512
+minAeroPatchDetailPercent = 0.05
+minAeroPatchCount = 6
+maxCachedAeroPatches = 4096
+enableDifferentialPressureTorque = true
+differentialPressureTorqueStrength = 0.45
+maxDifferentialTorqueImpulse = 180.0
 ```
 
-Sable computes each lift-provider / wing surface's local velocity and then calculates drag and lift from that velocity. The mixin injects immediately after Sable transforms that velocity into sub-level-local space, samples ProtoManly's Weather wind at the lift provider's world position, converts the wind into the same local space, and subtracts it from Sable's `LIFT_VELO`.
+## Notes
 
-That means Sable's existing wing math naturally sees:
+- Body wind now uses a dedicated PMWeather force group instead of showing as Sable drag.
+- Lift/drag airflow now samples wind at each lift provider's actual world position instead of using the strongest object-wide wind sample.
+- Aero surface caches are dirtied when Sable plot blocks change, so same-bounds shape edits update faster.
+- Sparse structures are scanned from loaded Sable plot chunks instead of blindly scanning the entire bounding box.
+- Differential pressure torque is capped and only adds the residual uneven-pressure torque after the stable center-of-pressure line has removed uniform-pressure fake spin.
 
-- headwind as increased airflow,
-- tailwind as reduced airflow,
-- crosswind as sideways airflow over fins/rudders/stabilizers,
-- storm/tornado wind as stronger local airflow if PMWeather reports it.
+0.7.0 intentionally removes the old/deprecated config names. If you update from an older version and the TOML gets corrected or regenerated, that is expected. Deleting `config/pmweather_aeronautics-common.toml` is still the cleanest way to force a fresh 0.7.0 config.
 
-### Optional body-push path
 
-The original center-of-mass push system is still included and now defaults to enabled. Set `enableBodyPush` to `false` in the config if you want pure lift/drag airflow integration without pushing the whole sub-level.
-
-When body push is enabled, the mod:
-
-- Registers a Sable `SablePrePhysicsTickEvent` listener.
-- Iterates all loaded `ServerSubLevel`s in the current Sable physics system.
-- Samples `dev.protomanly.pmweather.weather.WindEngine.getWind(...)` at the sub-level center of mass.
-- Converts the resulting world-space wind impulse into Sable local/plot space.
-- Queues the impulse through `ServerSubLevel#getOrCreateQueuedForceGroup(ForceGroups.DRAG.get())`.
-- Adds optional high-wind angular turbulence.
-
-## Build notes
-
-The `build.gradle` is set up for local jars. Create a `libs/` folder and place matching 1.21.1 jars there, using these filenames or update the dependency names:
-
-```text
-libs/pmweather-0.16.4-1.21.1-alpha.jar
-libs/sable-neoforge-1.21.1-1.2.2.jar
-libs/create-aeronautics-bundled-1.21.1-1.2.1.jar
-```
-
-Then run:
-
-```bash
-./gradlew build
-```
-
-If Sable/Aeronautics jars use different filenames, update the `compileOnly name:` entries in `build.gradle`.
-
-## Important tuning
-
-The default config is conservative. Increase `windInfluence` slowly. Sable applies these during physics substeps, so a value that looks small can still be strong.
-
-The first config file appears under:
-
-```text
-config/pmweather_aeronautics-common.toml
-```
-
-## Current caveats
-
-- This source has not been verified against compiled Sable/Aeronautics jars in this environment. The source zips were available, but the exact published dependency jars were not.
-- The mixin target is intentionally narrow, but it is still a mixin into Sable internals. If Sable changes `BlockSubLevelLiftProvider#sable$contributeLiftAndDrag`, this may need updating.
-- It affects Sable lift-provider blocks. Balloon/static lift and propeller thrust are not modified directly.
-- Sampling PMWeather per lift provider is the most physically accurate approach, but very large contraptions could need caching/tuning later.
+On startup, 0.7.0 checks for older config keys and moves the old TOML to a `.bak` file before NeoForge registers the new config. This intentionally forces a clean sorted 0.7.0 config instead of preserving deprecated values.

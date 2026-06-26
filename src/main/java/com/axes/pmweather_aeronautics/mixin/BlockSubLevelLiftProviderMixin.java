@@ -21,7 +21,8 @@ public interface BlockSubLevelLiftProviderMixin {
                     value = "INVOKE",
                     target = "Ldev/ryanhcode/sable/companion/math/Pose3d;transformNormalInverse(Lorg/joml/Vector3d;)Lorg/joml/Vector3d;",
                     shift = At.Shift.AFTER
-            )
+            ),
+            require = 0
     )
     private void pmweather_aeronautics$subtractWindFromLiftVelocity(
             final BlockSubLevelLiftProvider.LiftProviderContext ctx,
