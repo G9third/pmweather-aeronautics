@@ -85,21 +85,28 @@ public final class DebugWindCommand {
 
         final double horizontal = horizontalLength(rawWind);
         final double total = rawWind.length();
+        final Vec3 physicsWind = WeatherWindField.pmweatherWindToPhysicsWind(rawWind);
+        final double physicsHorizontal = horizontalLength(physicsWind);
+        final double physicsTotal = physicsWind.length();
         final double updraftEstimate = estimateBridgeUpdraft(horizontal);
         final double estimatedFinalY = rawWind.y + updraftEstimate;
+        final double estimatedFinalYPhysics = WeatherWindField.pmweatherSpeedToBlocksPerSecond(estimatedFinalY);
 
         source.sendSuccess(() -> Component.literal("PMWeather wind at your position"), false);
         source.sendSuccess(() -> Component.literal(format(
                 "pos=(%.1f, %.1f, %.1f) raw=(x=%.3f, y=%.3f, z=%.3f)",
                 position.x, position.y, position.z, rawWind.x, rawWind.y, rawWind.z)), false);
         source.sendSuccess(() -> Component.literal(format(
-                "horizontal=%.3f total=%.3f direction=%s",
-                horizontal, total, horizontalDirection(rawWind))), false);
+                "pmweatherSpeed=%.3f mph-style horizontal=%.3f direction=%s",
+                total, horizontal, horizontalDirection(rawWind))), false);
+        source.sendSuccess(() -> Component.literal(format(
+                "physicsSpeed=%.3f blocks/s horizontal=%.3f blocks/s",
+                physicsTotal, physicsHorizontal)), false);
 
         if (Config.enableTornadoUpdraftModel() && horizontal > Config.tornadoUpdraftThreshold()) {
             source.sendSuccess(() -> Component.literal(format(
-                    "bridge tornado model: active, estimated extra updraft=%.3f, estimated final y=%.3f",
-                    updraftEstimate, estimatedFinalY)), false);
+                    "bridge tornado model: active, estimated extra updraft=%.3f mph-style, estimated final y=%.3f mph-style / %.3f blocks/s",
+                    updraftEstimate, estimatedFinalY, estimatedFinalYPhysics)), false);
         } else {
             source.sendSuccess(() -> Component.literal(format(
                     "bridge tornado model: inactive here, threshold=%.3f, enabled=%s",

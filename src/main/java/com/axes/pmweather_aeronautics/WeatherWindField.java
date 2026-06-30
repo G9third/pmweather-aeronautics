@@ -49,6 +49,14 @@ import java.util.Set;
  * - Cached values are still raw PMWeather wind vectors; this does not invent wind, lift, or tumble.
  */
 final class WeatherWindField {
+    /**
+     * PMWeather wind magnitudes are exposed in mph-style weather units. Sable/Rapier velocity is
+     * block/second style, and one Minecraft block is treated as roughly one meter. Keep this
+     * internal so user config can stay readable: thresholds remain PMWeather/mph values while
+     * windInfluence=1.0 means realistic converted physics speed.
+     */
+    static final double PMWEATHER_MPH_TO_BLOCKS_PER_SECOND = 0.44704D;
+
     private static final Vec3 CENTER_NORMAL = Vec3.ZERO;
     private static final Vec3 ROOF_NORMAL = new Vec3(0.0D, 1.0D, 0.0D);
     private static final Vec3 BOTTOM_NORMAL = new Vec3(0.0D, -1.0D, 0.0D);
@@ -103,6 +111,21 @@ final class WeatherWindField {
     private static Class<?> cachedBoundsClass;
 
     private WeatherWindField() {
+    }
+
+
+    static double pmweatherSpeedToBlocksPerSecond(final double speed) {
+        if (!Double.isFinite(speed)) {
+            return 0.0D;
+        }
+        return speed * PMWEATHER_MPH_TO_BLOCKS_PER_SECOND;
+    }
+
+    static Vec3 pmweatherWindToPhysicsWind(final Vec3 wind) {
+        if (wind == null || wind == Vec3.ZERO || wind.lengthSqr() <= 1.0e-12D) {
+            return Vec3.ZERO;
+        }
+        return wind.scale(PMWEATHER_MPH_TO_BLOCKS_PER_SECOND);
     }
 
     static Vec3 sampleBestWind(final ServerSubLevel subLevel, final Vec3 preferredPosition) {
@@ -367,6 +390,11 @@ final class WeatherWindField {
         return next.wind(currentTick);
     }
 
+    /**
+     * Returns PMWeather's raw wind vector in PMWeather/mph-style units. Do not use this directly
+     * as a Sable physics velocity. Convert with pmweatherWindToPhysicsWind(...) at the point where
+     * the value becomes body wind, lift-provider airflow, or Sable force.
+     */
     static Vec3 sampleRawWindAt(final ServerLevel level, final Vec3 samplePosition) {
         return WindEngine.getWind(
                 samplePosition,

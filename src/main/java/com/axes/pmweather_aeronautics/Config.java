@@ -6,11 +6,12 @@ public final class Config {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
     static {
+        BUILDER.comment("PMWeather Aeronautics config schema: 0.7.3 wind-0.1 edge-case caps");
         BUILDER.push("general");
     }
 
     public static final ModConfigSpec.DoubleValue WIND_THRESHOLD = BUILDER
-            .comment("Minimum PMWeather wind-vector magnitude before effects are applied. PMWeather's own units are used.")
+            .comment("Minimum PMWeather wind-vector magnitude before effects are applied. This stays in PMWeather/mph-style units even though physics wind is converted internally.")
             .translation("pmweather_aeronautics.configuration.windThreshold")
             .defineInRange("windThreshold", 8.0D, 0.0D, 300.0D);
 
@@ -30,14 +31,14 @@ public final class Config {
             .define("enableAirflowLift", true);
 
     public static final ModConfigSpec.DoubleValue AIRFLOW_INFLUENCE = BUILDER
-            .comment("How much local PMWeather wind is treated as aerodynamic airflow for Sable lift providers. 1.0 = full sampled wind.")
+            .comment("How much local PMWeather wind is treated as aerodynamic airflow for Sable lift providers. 1.0 = realistic converted PMWeather wind speed.")
             .translation("pmweather_aeronautics.configuration.airflowInfluence")
             .defineInRange("airflowInfluence", 1.0D, 0.0D, 40.0D);
 
     public static final ModConfigSpec.IntValue AIRFLOW_WIND_SAMPLE_INTERVAL_TICKS = BUILDER
             .comment("How often each local lift-provider wind sample asks PMWeather for a fresh airflow value, in game ticks. Cached wind is reused between samples.")
             .translation("pmweather_aeronautics.configuration.airflowWindSampleIntervalTicks")
-            .defineInRange("airflowWindSampleIntervalTicks", 10, 1, 200);
+            .defineInRange("airflowWindSampleIntervalTicks", 5, 1, 200);
 
     static {
         BUILDER.pop();
@@ -55,9 +56,9 @@ public final class Config {
             .define("enableBodyRelativeWindDrag", true);
 
     public static final ModConfigSpec.DoubleValue WIND_INFLUENCE = BUILDER
-            .comment("Whole-body wind pressure multiplier. PMWeather 0.16 tornado wind commonly reaches roughly 30-80+ in its own vector units.")
+            .comment("Main whole-body wind strength after PMWeather mph-style wind is converted to block/second physics speed. Default 0.1 is tuned for Sable's lightweight gameplay mass scale; raise it for stronger arcade-style wind.")
             .translation("pmweather_aeronautics.configuration.windInfluence")
-            .defineInRange("windInfluence", 2.0D, 0.0D, 100.0D);
+            .defineInRange("windInfluence", 0.1D, 0.0D, 100.0D);
 
     public static final ModConfigSpec.DoubleValue MASS_SCALING = BUILDER
             .comment("Optional extra mass damping for body wind. 0.0 = no extra damping, 1.0 = strongest damping. Sable physics already handles real mass.")
@@ -75,14 +76,14 @@ public final class Config {
             .defineInRange("aeroPatchAreaWeightStrength", 0.65D, 0.0D, 1.0D);
 
     public static final ModConfigSpec.DoubleValue MAX_IMPULSE_PER_SUBSTEP = BUILDER
-            .comment("Safety cap on the linear impulse applied to a sub-level during each Sable physics substep.")
+            .comment("High safety cap on the linear impulse applied to a sub-level during each Sable physics substep. This is intended to catch extreme spikes, not tune normal wind strength.")
             .translation("pmweather_aeronautics.configuration.maxImpulsePerSubstep")
-            .defineInRange("maxImpulsePerSubstep", 900.0D, 0.0D, 100000.0D);
+            .defineInRange("maxImpulsePerSubstep", 2000.0D, 0.0D, 100000.0D);
 
     public static final ModConfigSpec.DoubleValue MAX_AIR_RELATIVE_VELOCITY_CORRECTION_PER_SUBSTEP = BUILDER
-            .comment("Maximum fraction of the current air-relative normal velocity that body wind pressure may correct in one Sable physics substep. This is a physical impulse overshoot limiter, not small-object damping.")
+            .comment("Maximum fraction of the current air-relative normal velocity that body wind pressure may correct in one Sable physics substep. Default 0.5 keeps protection against feedback/overshoot while leaving normal wind strength controlled by windInfluence.")
             .translation("pmweather_aeronautics.configuration.maxAirRelativeVelocityCorrectionPerSubstep")
-            .defineInRange("maxAirRelativeVelocityCorrectionPerSubstep", 0.25D, 0.0D, 1.0D);
+            .defineInRange("maxAirRelativeVelocityCorrectionPerSubstep", 0.5D, 0.0D, 1.0D);
 
     static {
         BUILDER.pop();
@@ -97,12 +98,12 @@ public final class Config {
     public static final ModConfigSpec.DoubleValue DIFFERENTIAL_PRESSURE_TORQUE_STRENGTH = BUILDER
             .comment("Strength multiplier for uneven-pressure torque. 0.0 disables the extra torque; 1.0 uses the full measured patch-pressure residual. Defaults below 1.0 keep small objects lively without reintroducing old sparse-sample spin.")
             .translation("pmweather_aeronautics.configuration.differentialPressureTorqueStrength")
-            .defineInRange("differentialPressureTorqueStrength", 0.45D, 0.0D, 2.0D);
+            .defineInRange("differentialPressureTorqueStrength", 0.6D, 0.0D, 2.0D);
 
     public static final ModConfigSpec.DoubleValue MAX_DIFFERENTIAL_TORQUE_IMPULSE = BUILDER
-            .comment("Safety cap for added uneven-pressure torque impulse per Sable physics substep. This only caps the differential torque residual; normal Sable/Rapier inertia still handles final rotation.")
+            .comment("High safety cap for added uneven-pressure torque impulse per Sable physics substep. This is intended to catch extreme spin spikes while leaving normal uneven-pressure torque mostly unmodified.")
             .translation("pmweather_aeronautics.configuration.maxDifferentialTorqueImpulse")
-            .defineInRange("maxDifferentialTorqueImpulse", 180.0D, 0.0D, 100000.0D);
+            .defineInRange("maxDifferentialTorqueImpulse", 1000.0D, 0.0D, 100000.0D);
 
     static {
         BUILDER.pop();
@@ -150,7 +151,7 @@ public final class Config {
             .defineInRange("tornadoUpdraftStrength", 0.35D, 0.0D, 5.0D);
 
     public static final ModConfigSpec.DoubleValue MAX_TORNADO_UPDRAFT = BUILDER
-            .comment("Maximum added upward wind from the Sable-specific tornado updraft model, in PMWeather wind-vector units.")
+            .comment("Maximum added upward wind from the Sable-specific tornado updraft model, in PMWeather/mph-style units before internal physics conversion.")
             .translation("pmweather_aeronautics.configuration.maxTornadoUpdraft")
             .defineInRange("maxTornadoUpdraft", 30.0D, 0.0D, 300.0D);
 
@@ -255,7 +256,7 @@ public final class Config {
     }
 
     public static int airflowWindSampleIntervalTicks() {
-        return intValue(AIRFLOW_WIND_SAMPLE_INTERVAL_TICKS, 10);
+        return intValue(AIRFLOW_WIND_SAMPLE_INTERVAL_TICKS, 5);
     }
 
     public static boolean enableBodyPush() {
@@ -267,7 +268,7 @@ public final class Config {
     }
 
     public static double windInfluence() {
-        return doubleValue(WIND_INFLUENCE, 2.0D);
+        return doubleValue(WIND_INFLUENCE, 1.0D);
     }
 
     public static double massScaling() {
