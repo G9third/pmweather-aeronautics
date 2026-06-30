@@ -97,7 +97,9 @@ public final class WeatherForceApplier {
         lastWindwardSamples = 0;
         lastPressureGroups = 0;
 
-        final double threshold = Config.windThreshold();
+        // Config windThreshold remains in PMWeather/mph-style units. Body pressure below uses
+        // converted block/second physics wind, so compare against the converted threshold here.
+        final double threshold = WeatherWindField.pmweatherSpeedToBlocksPerSecond(Config.windThreshold());
         final double massDamping = Math.max(1.0D, Math.pow(
                 Math.max(1.0D, massData.getMass()),
                 Config.massScaling() * 0.25D
@@ -172,7 +174,7 @@ public final class WeatherForceApplier {
         double strongest = 0.0D;
         for (final WeatherWindSampler.WindSample sample : samples) {
             final Vec3 wind = applyRealisticTornadoWind(subLevel, sample.samplePosition(), sample.wind());
-            strongest = Math.max(strongest, wind.length());
+            strongest = Math.max(strongest, WeatherWindField.pmweatherWindToPhysicsWind(wind).length());
         }
         return strongest;
     }
@@ -190,7 +192,8 @@ public final class WeatherForceApplier {
     }
 
     private static void setBodyPressureWind(final Vec3 wind, final Vector3d result) {
-        result.set(wind.x, wind.y, wind.z);
+        final Vec3 physicsWind = WeatherWindField.pmweatherWindToPhysicsWind(wind);
+        result.set(physicsWind.x, physicsWind.y, physicsWind.z);
         if (Config.enableBodyRelativeWindDrag()) {
             result.sub(LINEAR_VELOCITY);
         }

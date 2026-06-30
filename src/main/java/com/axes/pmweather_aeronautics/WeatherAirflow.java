@@ -31,11 +31,14 @@ public final class WeatherAirflow {
         final Vec3 samplePos = new Vec3(WORLD_SAMPLE.x, WORLD_SAMPLE.y, WORLD_SAMPLE.z);
         final Vec3 sampledWind = WeatherWindSampler.sampleLocalAirflowWindCached(subLevel, samplePos);
 
+        // Cached airflow wind is kept in PMWeather/mph-style units so thresholds stay readable.
+        // Convert only when feeding Sable's local lift velocity.
         if (sampledWind.length() <= Config.windThreshold()) {
             return;
         }
 
-        LOCAL_WIND.set(sampledWind.x, sampledWind.y, sampledWind.z).mul(Config.airflowInfluence());
+        final Vec3 physicsWind = WeatherWindField.pmweatherWindToPhysicsWind(sampledWind);
+        LOCAL_WIND.set(physicsWind.x, physicsWind.y, physicsWind.z).mul(Config.airflowInfluence());
         pose.transformNormalInverse(LOCAL_WIND);
 
         // Sable's lift math uses local air-relative velocity. Subtracting wind makes lift providers

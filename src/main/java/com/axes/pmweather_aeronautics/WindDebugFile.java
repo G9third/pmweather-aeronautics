@@ -236,7 +236,7 @@ final class WindDebugFile {
             writeRawLine("# PMWeather Aeronautics Sable wind debug CSV");
             writeRawLine("# Rows are intentionally variable-width. rowType is the first column.");
             writeRawLine("# object rows: rowType,tick,subLevelId,... net force/torque and current sampling counters.");
-            writeRawLine("# sample rows: rowType,tick,subLevelId,sampleIndex,side,... raw/final/relative wind and local impulse.");
+            writeRawLine("# sample rows: rowType,tick,subLevelId,sampleIndex,side,... raw/final PMWeather wind are mph-style units; relative/pressure wind and impulses are physics units.");
             writeRawLine("# side rows: rowType,tick,subLevelId,side,... center-of-pressure impulse and local torque.");
         }
     }

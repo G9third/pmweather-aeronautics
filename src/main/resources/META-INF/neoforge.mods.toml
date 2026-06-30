@@ -29,14 +29,14 @@ side = "BOTH"
 [[dependencies.${mod_id}]]
 modId = "sable"
 type = "required"
-versionRange = "[2.0.3,3.0.0)"
+versionRange = "[2.0.0,)"
 ordering = "AFTER"
 side = "BOTH"
 
 [[dependencies.${mod_id}]]
 modId = "pmweather"
 type = "required"
-versionRange = "[0.16.4,)"
+versionRange = "[0.15.3,)"
 ordering = "AFTER"
 side = "BOTH"
 

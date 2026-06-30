@@ -14,31 +14,14 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.List;
 
 @Mod(PMWeatherAeronautics.MODID)
 public final class PMWeatherAeronautics {
     public static final String MODID = "pmweather_aeronautics";
     public static final Logger LOGGER = LogUtils.getLogger();
 
-    private static final List<String> LEGACY_CONFIG_KEYS = List.of(
-            "turbulenceMultiplier",
-            "surfaceShearFactor",
-            "surfaceTorqueFactor",
-            "surfaceDifferentialThresholdRatio",
-            "aerodynamicProfileResolution",
-            "aerodynamicProfileFullTorqueInertia",
-            "aerodynamicProfileMinTorqueScale",
-            "aerodynamicProfileMaxTorqueImpulse",
-            "aerodynamicProfileMinTorqueInertia",
-            "minSurfaceWindSamplesWhenBudgeted",
-            "aerodynamicProfileStrength",
-            "surfaceAreaWeightStrength",
-            "maxSurfaceWindSamples"
-    );
-
     public PMWeatherAeronautics(final IEventBus modBus, final ModContainer modContainer) {
-        backupLegacyCommonConfigIfNeeded();
+        backupOutdatedCommonConfigIfNeeded();
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
 
         // Sable fires this once for each physics sub-step, which is the right time to add impulses.
@@ -48,8 +31,9 @@ public final class PMWeatherAeronautics {
         NeoForge.EVENT_BUS.addListener(DebugWindCommand::onServerTick);
     }
 
-    private static void backupLegacyCommonConfigIfNeeded() {
+    private static void backupOutdatedCommonConfigIfNeeded() {
         final Path configFile = FMLPaths.CONFIGDIR.get().resolve(MODID + "-common.toml");
+
         if (!Files.isRegularFile(configFile)) {
             return;
         }
@@ -58,39 +42,71 @@ public final class PMWeatherAeronautics {
         try {
             contents = Files.readString(configFile);
         } catch (final IOException exception) {
-            LOGGER.warn("Could not read PMWeather Aeronautics config for 0.7 migration check: {}", configFile, exception);
+            LOGGER.warn("Could not read PMWeather Aeronautics config for 0.7.3 reset check: {}", configFile, exception);
             return;
         }
 
-        boolean legacy = false;
-        for (final String key : LEGACY_CONFIG_KEYS) {
-            if (contents.contains(key)) {
-                legacy = true;
-                break;
-            }
-        }
-
-        if (!legacy) {
+        if (!looksLikePreRealisticWindConfig(contents)) {
+            LOGGER.debug("PMWeather Aeronautics config does not look like an older reset target. Leaving it untouched.");
             return;
         }
 
-        final Path backupFile = nextLegacyBackupPath(configFile);
+        final Path backupFile = nextConfigResetBackupPath(configFile);
         try {
             Files.move(configFile, backupFile, StandardCopyOption.REPLACE_EXISTING);
-            LOGGER.info("PMWeather Aeronautics 0.7 detected an older config and moved it to {}. A clean 0.7 config will be generated.", backupFile.getFileName());
+            LOGGER.info("PMWeather Aeronautics 0.7.3 moved an older 0.7.x config to {}. A fresh wind-0.1 config will be generated.", backupFile.getFileName());
         } catch (final IOException exception) {
-            LOGGER.warn("Could not move old PMWeather Aeronautics config to {}. Delete {} manually if the 0.7 config does not regenerate cleanly.", backupFile, configFile, exception);
+            LOGGER.warn("Could not move old PMWeather Aeronautics config to {}. Delete {} manually if the 0.7.3 config does not regenerate cleanly.", backupFile, configFile, exception);
         }
     }
 
-    private static Path nextLegacyBackupPath(final Path configFile) {
+    private static boolean looksLikePreRealisticWindConfig(final String contents) {
+        if (contents.contains("PMWeather Aeronautics config schema: 0.7.3 wind-0.1 edge-case caps")) {
+            return false;
+        }
+
+        return containsAny(contents,
+                // 0.5.x / 0.6.x removed or renamed settings.
+                "turbulenceMultiplier",
+                "surfaceShearFactor",
+                "surfaceTorqueFactor",
+                "surfaceDifferentialThresholdRatio",
+                "aerodynamicProfileResolution",
+                "aerodynamicProfileFullTorqueInertia",
+                "aerodynamicProfileMinTorqueScale",
+                "aerodynamicProfileMaxTorqueImpulse",
+                "aerodynamicProfileMinTorqueInertia",
+                "maxSurfaceWindSamples",
+                "minSurfaceWindSamplesWhenBudgeted",
+                "aerodynamicProfileStrength",
+                "surfaceAreaWeightStrength",
+                // 0.7.0 / 0.7.1 generated config comment before the internal mph-to-block/second conversion.
+                "PMWeather 0.16 tornado wind commonly reaches roughly 30-80+ in its own vector units",
+                "1.0 = realistic baseline, 2.0 = twice realistic strength",
+                "This is a physical impulse overshoot limiter, not small-object damping.",
+                // 0.7.2 generated config comments before the 0.7.3 reset.
+                "0.1 is the default because Sable mass is a lightweight gameplay scale",
+                "0.5 keeps some protection against feedback/overshoot while leaving normal wind response mostly controlled by windInfluence"
+        );
+    }
+
+    private static boolean containsAny(final String contents, final String... needles) {
+        for (final String needle : needles) {
+            if (contents.contains(needle)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Path nextConfigResetBackupPath(final Path configFile) {
         final Path directory = configFile.getParent();
-        final String baseName = MODID + "-common.legacy-0_6.toml.bak";
+        final String baseName = MODID + "-common.pre-0_7_3-wind-0_1-reset.toml.bak";
         Path candidate = directory.resolve(baseName);
         if (!Files.exists(candidate)) {
             return candidate;
         }
-        candidate = directory.resolve(MODID + "-common.legacy-0_6." + System.currentTimeMillis() + ".toml.bak");
+        candidate = directory.resolve(MODID + "-common.pre-0_7_3-wind-0_1-reset." + System.currentTimeMillis() + ".toml.bak");
         return candidate;
     }
 }
