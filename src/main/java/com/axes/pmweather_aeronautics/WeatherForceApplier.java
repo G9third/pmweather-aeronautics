@@ -37,7 +37,8 @@ public final class WeatherForceApplier {
     private static final Vector3d LAST_NET_AERO_TORQUE = new Vector3d();
     private static int lastWindwardSamples;
     private static int lastPressureGroups;
-    private static final double BODY_PUSH_NORMALIZATION = 100.0D;
+    private static final double BODY_DYNAMIC_PRESSURE_NORMALIZATION = 0.8D;
+    private static final double CENTER_FALLBACK_AREA = 1.0D;
     private static final ForceGroup WEATHER_FORCE_GROUP = new ForceGroup(
             Component.literal("PMWeather Wind"),
             Component.literal("Raw wind sampled from ProtoManly's Weather"),
@@ -112,7 +113,6 @@ public final class WeatherForceApplier {
         final int appliedProfileSamples = applyAerodynamicProfilePressure(
                 subLevel, pose, windGroup, samples, threshold, timeStep, massDamping, massData, centerOfMassLocal
         );
-
         int appliedCenter = 0;
         double centerSpeed = strongestSampleSpeed(subLevel, samples);
         if (appliedProfileSamples <= 0) {
@@ -120,9 +120,11 @@ public final class WeatherForceApplier {
             setBodyPressureWind(centerWind, CENTER_RELATIVE_WIND);
             centerSpeed = CENTER_RELATIVE_WIND.length();
             if (centerSpeed > threshold) {
-                final double magnitude = Math.max(0.0D, centerSpeed - threshold)
+                final double magnitude = aerodynamicPressureMagnitude(centerSpeed, threshold)
                         * Config.windInfluence()
-                        * BODY_PUSH_NORMALIZATION
+                        * Config.aeroPatchPressureStrength()
+                        * effectivePatchArea(CENTER_FALLBACK_AREA)
+                        * BODY_DYNAMIC_PRESSURE_NORMALIZATION
                         * timeStep
                         / massDamping;
 
@@ -160,10 +162,10 @@ public final class WeatherForceApplier {
 
         if (Config.debugLogging() && subLevel.getLevel().getGameTime() % 100L == 0L) {
             PMWeatherAeronautics.LOGGER.info(
-                    "PMWeather aerodynamic wind for Sable sub-level {}: centerApplied={}, profileApplied={}, strongestProfileSpeed={}, mass={}, damping={}, profileStrength={}, patchPerObjectMax={}, centerOfPressureSideOnly=true, relativeBodyDrag={}",
+                    "PMWeather aerodynamic wind for Sable sub-level {}: centerApplied={}, profileApplied={}, strongestProfileSpeed={}, mass={}, damping={}, profileStrength={}, areaWeightStrength={}, patchPerObjectMax={}, quadraticPressure=true, relativeBodyDrag={}",
                     subLevel.getUniqueId(), appliedCenter, appliedProfileSamples,
                     centerSpeed, massData.getMass(), massDamping,
-                    Config.aeroPatchPressureStrength(), Config.maxAeroPatchSamplesPerObject(), Config.enableBodyRelativeWindDrag()
+                    Config.aeroPatchPressureStrength(), Config.aeroPatchAreaWeightStrength(), Config.maxAeroPatchSamplesPerObject(), Config.enableBodyRelativeWindDrag()
             );
         }
     }
@@ -201,10 +203,10 @@ public final class WeatherForceApplier {
 
 
     /**
-     * Applies multi-point windward pressure from the cached exterior aerodynamic profile.
+     * Applies multi-point quadratic windward pressure from the cached exterior aerodynamic profile.
      *
      * 0.6.0 fix: avoid artificial Dzhanibekov-style spin from sparse sample point torque and uniform-pressure center bias.
-     * Each major exterior side is reduced to one center-of-pressure impulse. Uniform wind on a
+     * Each major exterior side is reduced to one center-of-pressure impulse after summing area-weighted patch pressure. Uniform wind on a
      * side therefore pushes through that side's pressure center instead of creating a rotating
      * couple from arbitrary selected sample locations.
      *
@@ -227,7 +229,7 @@ public final class WeatherForceApplier {
         }
 
         int windwardSamples = 0;
-        final double profileThreshold = Math.max(0.0D, threshold * 0.20D);
+        final double profileThreshold = Math.max(0.0D, threshold);
         for (int i = 1; i < samples.size(); i++) {
             final WeatherWindSampler.WindSample sample = samples.get(i);
             if (sample.areaWeight() <= 0.0D) {
@@ -245,7 +247,6 @@ public final class WeatherForceApplier {
         }
 
         final ProfilePressureGroup[] groups = new ProfilePressureGroup[8];
-        final double perProfileCap = Config.maxImpulsePerSubstep() * profileStrength / windwardSamples;
         double maxAppliedAirRelativeSpeed = 0.0D;
         for (int i = 1; i < samples.size(); i++) {
             final WeatherWindSampler.WindSample sample = samples.get(i);
@@ -261,16 +262,19 @@ public final class WeatherForceApplier {
             }
             maxAppliedAirRelativeSpeed = Math.max(maxAppliedAirRelativeSpeed, surfaceSpeed);
 
-            final double shareWeight = Math.max(0.05D, sample.areaWeight());
-            final double magnitude = Math.max(0.0D, surfaceSpeed - profileThreshold)
+            final double shareWeight = effectivePatchArea(sample.areaWeight());
+            final int groupIndex = pressureGroupIndex(sample.surfaceRole());
+            final double tornadoPressureMultiplier = tornadoUpdraftPressureMultiplier(sample, finalWind, PROFILE_SURFACE_WIND);
+            final double magnitude = aerodynamicPressureMagnitude(surfaceSpeed, profileThreshold)
                     * Config.windInfluence()
                     * profileStrength
+                    * tornadoPressureMultiplier
                     * shareWeight
-                    * BODY_PUSH_NORMALIZATION
+                    * BODY_DYNAMIC_PRESSURE_NORMALIZATION
                     * timeStep
-                    / massDamping
-                    / windwardSamples;
+                    / massDamping;
 
+            final double perProfileCap = Config.maxImpulsePerSubstep() * profileStrength;
             LOCAL_WIND_IMPULSE.set(PROFILE_SURFACE_WIND).normalize().mul(magnitude);
             capLength(LOCAL_WIND_IMPULSE, perProfileCap);
             if (LOCAL_WIND_IMPULSE.lengthSquared() <= 1.0e-10D) {
@@ -314,7 +318,6 @@ public final class WeatherForceApplier {
                 );
             }
 
-            final int groupIndex = pressureGroupIndex(sample.surfaceRole());
             ProfilePressureGroup group = groups[groupIndex];
             if (group == null) {
                 group = new ProfilePressureGroup(sample.surfaceRole());
@@ -347,6 +350,44 @@ public final class WeatherForceApplier {
         }
 
         return applied;
+    }
+
+    private static double aerodynamicPressureMagnitude(final double normalSpeed, final double threshold) {
+        if (!Double.isFinite(normalSpeed) || normalSpeed <= threshold) {
+            return 0.0D;
+        }
+        final double speed = Math.max(0.0D, normalSpeed);
+        final double deadZone = Math.max(0.0D, threshold);
+        return Math.max(0.0D, speed * speed - deadZone * deadZone);
+    }
+
+    private static double tornadoUpdraftPressureMultiplier(final WeatherWindSampler.WindSample sample,
+                                                           final Vec3 finalWind,
+                                                           final Vector3d surfacePressureWind) {
+        final double configured = Config.tornadoUpdraftPressureStrength();
+        if (!Config.enableTornadoUpdraftModel()
+                || configured <= 1.0D
+                || sample.surfaceRole() != AeroSurfaceCache.ROLE_BOTTOM
+                || surfacePressureWind.y() <= 0.0D
+                || surfacePressureWind.lengthSquared() <= 1.0e-12D) {
+            return 1.0D;
+        }
+
+        final double horizontalSpeed = Math.sqrt(finalWind.x * finalWind.x + finalWind.z * finalWind.z);
+        final double threshold = Config.tornadoUpdraftThreshold();
+        if (horizontalSpeed <= threshold) {
+            return 1.0D;
+        }
+
+        final double activation = Math.max(0.0D, Math.min(1.0D, (horizontalSpeed - threshold) / Math.max(1.0D, threshold)));
+        final double verticalShare = Math.max(0.0D, Math.min(1.0D, surfacePressureWind.y() / surfacePressureWind.length()));
+        return 1.0D + (configured - 1.0D) * activation * verticalShare;
+    }
+
+    private static double effectivePatchArea(final double rawArea) {
+        final double area = Double.isFinite(rawArea) ? Math.max(0.0D, rawArea) : 0.0D;
+        final double strength = Math.max(0.0D, Math.min(1.0D, Config.aeroPatchAreaWeightStrength()));
+        return Math.max(0.05D, 1.0D + (area - 1.0D) * strength);
     }
 
     private static int pressureGroupIndex(final int role) {

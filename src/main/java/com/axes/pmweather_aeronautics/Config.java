@@ -6,7 +6,7 @@ public final class Config {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
     static {
-        BUILDER.comment("PMWeather Aeronautics config schema: 0.7.3 wind-0.1 edge-case caps");
+        BUILDER.comment("PMWeather Aeronautics config schema: 0.8.0 wind-0.06-quadratic-surface-wind");
         BUILDER.push("general");
     }
 
@@ -56,9 +56,9 @@ public final class Config {
             .define("enableBodyRelativeWindDrag", true);
 
     public static final ModConfigSpec.DoubleValue WIND_INFLUENCE = BUILDER
-            .comment("Main whole-body wind strength after PMWeather mph-style wind is converted to block/second physics speed. Default 0.1 is tuned for Sable's lightweight gameplay mass scale; raise it for stronger arcade-style wind.")
+            .comment("Main whole-body wind strength after PMWeather mph-style wind is converted to block/second physics speed. Default 0.06 is tuned for the quadratic surface-pressure solver and Sable's kpg block mass scale. Tornado wind still ramps with wind speed squared, but normal 10-15 mph wind is calmer than the 0.7.5e 0.1 default.")
             .translation("pmweather_aeronautics.configuration.windInfluence")
-            .defineInRange("windInfluence", 0.1D, 0.0D, 100.0D);
+            .defineInRange("windInfluence", 0.06D, 0.0D, 100.0D);
 
     public static final ModConfigSpec.DoubleValue MASS_SCALING = BUILDER
             .comment("Optional extra mass damping for body wind. 0.0 = no extra damping, 1.0 = strongest damping. Sable physics already handles real mass.")
@@ -66,14 +66,14 @@ public final class Config {
             .defineInRange("massScaling", 0.0D, 0.0D, 1.0D);
 
     public static final ModConfigSpec.DoubleValue AERO_PATCH_PRESSURE_STRENGTH = BUILDER
-            .comment("Strength of 0.7 full exterior surface-patch pressure. This replaces the old aerodynamicProfileStrength config name.")
+            .comment("Strength of the quadratic exterior surface-pressure solver. This multiplies dynamic wind pressure after PMWeather mph-style wind is converted to physics speed.")
             .translation("pmweather_aeronautics.configuration.aeroPatchPressureStrength")
             .defineInRange("aeroPatchPressureStrength", 1.0D, 0.0D, 5.0D);
 
     public static final ModConfigSpec.DoubleValue AERO_PATCH_AREA_WEIGHT_STRENGTH = BUILDER
-            .comment("How strongly larger exterior patches receive more wind-sample weight during patch LOD. 0.0 = equal patches, 1.0 = fully area-weighted.")
+            .comment("How strongly exterior patch area affects body wind force. 1.0 = physical area weighting, so larger exposed faces catch more wind. 0.0 = equal patch weighting for old tuning.")
             .translation("pmweather_aeronautics.configuration.aeroPatchAreaWeightStrength")
-            .defineInRange("aeroPatchAreaWeightStrength", 0.65D, 0.0D, 1.0D);
+            .defineInRange("aeroPatchAreaWeightStrength", 1.0D, 0.0D, 1.0D);
 
     public static final ModConfigSpec.DoubleValue MAX_IMPULSE_PER_SUBSTEP = BUILDER
             .comment("High safety cap on the linear impulse applied to a sub-level during each Sable physics substep. This is intended to catch extreme spikes, not tune normal wind strength.")
@@ -154,6 +154,11 @@ public final class Config {
             .comment("Maximum added upward wind from the Sable-specific tornado updraft model, in PMWeather/mph-style units before internal physics conversion.")
             .translation("pmweather_aeronautics.configuration.maxTornadoUpdraft")
             .defineInRange("maxTornadoUpdraft", 30.0D, 0.0D, 300.0D);
+
+    public static final ModConfigSpec.DoubleValue TORNADO_UPDRAFT_PRESSURE_STRENGTH = BUILDER
+            .comment("Extra pressure strength for bottom-facing surfaces hit by tornado updraft. Default 1.0 means the new quadratic body-pressure solver handles tornado lift without an extra low-gravity boost. Raise only if tornado lift is too weak.")
+            .translation("pmweather_aeronautics.configuration.tornadoUpdraftPressureStrength")
+            .defineInRange("tornadoUpdraftPressureStrength", 1.0D, 1.0D, 500.0D);
 
     public static final ModConfigSpec.DoubleValue TORNADO_UPDRAFT_LIFT_HEIGHT = BUILDER
             .comment("Approximate vertical distance in blocks over which tornado updraft remains strong after an object first enters tornado-strength wind. Above this per-object lift zone, updraft fades out instead of carrying objects upward forever.")
@@ -268,7 +273,7 @@ public final class Config {
     }
 
     public static double windInfluence() {
-        return doubleValue(WIND_INFLUENCE, 1.0D);
+        return doubleValue(WIND_INFLUENCE, 0.06D);
     }
 
     public static double massScaling() {
@@ -280,15 +285,15 @@ public final class Config {
     }
 
     public static double aeroPatchAreaWeightStrength() {
-        return doubleValue(AERO_PATCH_AREA_WEIGHT_STRENGTH, 0.65D);
+        return doubleValue(AERO_PATCH_AREA_WEIGHT_STRENGTH, 1.0D);
     }
 
     public static double maxImpulsePerSubstep() {
-        return doubleValue(MAX_IMPULSE_PER_SUBSTEP, 900.0D);
+        return doubleValue(MAX_IMPULSE_PER_SUBSTEP, 2000.0D);
     }
 
     public static double maxAirRelativeVelocityCorrectionPerSubstep() {
-        return doubleValue(MAX_AIR_RELATIVE_VELOCITY_CORRECTION_PER_SUBSTEP, 0.25D);
+        return doubleValue(MAX_AIR_RELATIVE_VELOCITY_CORRECTION_PER_SUBSTEP, 0.5D);
     }
 
     public static boolean enableDifferentialPressureTorque() {
@@ -296,11 +301,11 @@ public final class Config {
     }
 
     public static double differentialPressureTorqueStrength() {
-        return doubleValue(DIFFERENTIAL_PRESSURE_TORQUE_STRENGTH, 0.45D);
+        return doubleValue(DIFFERENTIAL_PRESSURE_TORQUE_STRENGTH, 0.6D);
     }
 
     public static double maxDifferentialTorqueImpulse() {
-        return doubleValue(MAX_DIFFERENTIAL_TORQUE_IMPULSE, 180.0D);
+        return doubleValue(MAX_DIFFERENTIAL_TORQUE_IMPULSE, 1000.0D);
     }
 
     public static int maxAeroPatchSamplesPerObject() {
@@ -333,6 +338,10 @@ public final class Config {
 
     public static double maxTornadoUpdraft() {
         return doubleValue(MAX_TORNADO_UPDRAFT, 30.0D);
+    }
+
+    public static double tornadoUpdraftPressureStrength() {
+        return doubleValue(TORNADO_UPDRAFT_PRESSURE_STRENGTH, 1.0D);
     }
 
     public static double tornadoUpdraftLiftHeight() {

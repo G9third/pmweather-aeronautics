@@ -42,7 +42,7 @@ public final class PMWeatherAeronautics {
         try {
             contents = Files.readString(configFile);
         } catch (final IOException exception) {
-            LOGGER.warn("Could not read PMWeather Aeronautics config for 0.7.3 reset check: {}", configFile, exception);
+            LOGGER.warn("Could not read PMWeather Aeronautics config for 0.8.0 reset check: {}", configFile, exception);
             return;
         }
 
@@ -54,15 +54,22 @@ public final class PMWeatherAeronautics {
         final Path backupFile = nextConfigResetBackupPath(configFile);
         try {
             Files.move(configFile, backupFile, StandardCopyOption.REPLACE_EXISTING);
-            LOGGER.info("PMWeather Aeronautics 0.7.3 moved an older 0.7.x config to {}. A fresh wind-0.1 config will be generated.", backupFile.getFileName());
+            LOGGER.info("PMWeather Aeronautics 0.8.0 moved an older config to {}. A fresh wind-0.06 quadratic surface-wind config will be generated.", backupFile.getFileName());
         } catch (final IOException exception) {
-            LOGGER.warn("Could not move old PMWeather Aeronautics config to {}. Delete {} manually if the 0.7.3 config does not regenerate cleanly.", backupFile, configFile, exception);
+            LOGGER.warn("Could not move old PMWeather Aeronautics config to {}. Delete {} manually if the 0.8.0 config does not regenerate cleanly.", backupFile, configFile, exception);
         }
     }
 
     private static boolean looksLikePreRealisticWindConfig(final String contents) {
-        if (contents.contains("PMWeather Aeronautics config schema: 0.7.3 wind-0.1 edge-case caps")) {
+        if (contents.contains("PMWeather Aeronautics config schema: 0.8.0 wind-0.06-quadratic-surface-wind")) {
             return false;
+        }
+
+        if (contents.contains("[ground_drag]")
+                || contents.contains("groundedHorizontalWindMultiplier")
+                || contents.contains("groundLinearDragStrength")
+                || contents.contains("groundAngularDragStrength")) {
+            return true;
         }
 
         return containsAny(contents,
@@ -84,6 +91,44 @@ public final class PMWeatherAeronautics {
                 "PMWeather 0.16 tornado wind commonly reaches roughly 30-80+ in its own vector units",
                 "1.0 = realistic baseline, 2.0 = twice realistic strength",
                 "This is a physical impulse overshoot limiter, not small-object damping.",
+                // 0.7.5e generated configs before 0.8.0 lowered body wind to 0.06.
+                "PMWeather Aeronautics config schema: 0.7.5e wind-0.1-balanced-tornado-lift",
+                "Default 0.1 is tuned for the quadratic surface-pressure solver",
+                "windInfluence = 0.1",
+                // 0.7.5d generated configs before balancing tornado lift for the new quadratic body pressure.
+                "PMWeather Aeronautics config schema: 0.7.5d wind-0.005-quadratic-tornado-lift",
+                "Default 0.005 is a gameplay-realistic value for Sable's kpg block mass scale",
+                "tornadoUpdraftPressureStrength = 40.0",
+                "windInfluence = 0.005",
+                // 0.7.5c generated configs before realistic body wind and tornado updraft pressure strength.
+                "PMWeather Aeronautics config schema: 0.7.5c quadratic-pressure-no-ground-drag",
+                "Default 0.2 is tuned for Sable's lightweight gameplay mass scale",
+                "windInfluence = 0.2",
+                // 0.7.5b generated configs before quadratic pressure and before removing ground drag.
+                "PMWeather Aeronautics config schema: 0.7.5b wind-0.2 updraft-0.5 grounded-horizontal-resistance",
+                // 0.7.5a generated configs before grounded horizontal wind-force resistance.
+                "PMWeather Aeronautics config schema: 0.7.5a wind-0.2 updraft-0.5 bottom-updraft-high-ground-drag",
+                // 0.7.5 generated configs before the high-ground-drag reset.
+                "PMWeather Aeronautics config schema: 0.7.5 wind-0.2 updraft-0.5 bottom-updraft-ground-drag",
+                "groundLinearDragStrength = 3.0",
+                "groundAngularDragStrength = 2.0",
+                "maxGroundDragImpulsePerSubstep = 2000.0",
+                "maxGroundDragTorqueImpulsePerSubstep = 1000.0",
+                // 0.7.3d generated configs before the public 0.7.5 rename/reset.
+                "PMWeather Aeronautics config schema: 0.7.3d wind-0.2 updraft-0.5 bottom-updraft-ground-drag",
+                // 0.7.3c generated configs before grounded drag was added.
+                "PMWeather Aeronautics config schema: 0.7.3c wind-0.2 updraft-0.5 bottom-updraft-solver",
+                "bottom-updraft-solver",
+                // 0.7.3b wind-0.2/updraft-0.5 generated configs before bottom-updraft solver reset.
+                "PMWeather Aeronautics config schema: 0.7.3b wind-0.2 updraft-0.5 edge-case caps",
+                "Default 0.5 gives stronger tornado lift than earlier 0.7.3 builds",
+                // 0.7.3a wind-0.2/updraft-0.4 generated configs before the same-version 0.7.3b updraft reset.
+                "PMWeather Aeronautics config schema: 0.7.3a wind-0.2 updraft-0.4 edge-case caps",
+                "Default 0.4 gives slightly stronger tornado lift than 0.7.3 wind-0.1 builds",
+                "tornadoUpdraftStrength = 0.4",
+                // 0.7.3 wind-0.1 generated configs before the same-version 0.7.3a tuning reset.
+                "PMWeather Aeronautics config schema: 0.7.3 wind-0.1 edge-case caps",
+                "Default 0.1 is tuned for Sable's lightweight gameplay mass scale",
                 // 0.7.2 generated config comments before the 0.7.3 reset.
                 "0.1 is the default because Sable mass is a lightweight gameplay scale",
                 "0.5 keeps some protection against feedback/overshoot while leaving normal wind response mostly controlled by windInfluence"
@@ -101,12 +146,12 @@ public final class PMWeatherAeronautics {
 
     private static Path nextConfigResetBackupPath(final Path configFile) {
         final Path directory = configFile.getParent();
-        final String baseName = MODID + "-common.pre-0_7_3-wind-0_1-reset.toml.bak";
+        final String baseName = MODID + "-common.pre-0_8_0.toml.bak";
         Path candidate = directory.resolve(baseName);
         if (!Files.exists(candidate)) {
             return candidate;
         }
-        candidate = directory.resolve(MODID + "-common.pre-0_7_3-wind-0_1-reset." + System.currentTimeMillis() + ".toml.bak");
+        candidate = directory.resolve(MODID + "-common.pre-0_8_0." + System.currentTimeMillis() + ".toml.bak");
         return candidate;
     }
 }

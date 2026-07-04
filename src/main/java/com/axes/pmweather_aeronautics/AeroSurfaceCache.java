@@ -111,7 +111,7 @@ public final class AeroSurfaceCache {
         final int maxCachedPatches = Math.max(64, Math.min(32768, Config.maxCachedAeroPatches()));
         final List<ProfileFace> cachedPatches = rawSurfacePatches.size() > maxCachedPatches
                 ? selectProfileSamples(rawSurfacePatches, maxCachedPatches)
-                : normalizeProfileWeights(rawSurfacePatches);
+                : List.copyOf(rawSurfacePatches);
 
         final ProfileAccumulator west = new ProfileAccumulator();
         final ProfileAccumulator east = new ProfileAccumulator();
@@ -424,7 +424,7 @@ public final class AeroSurfaceCache {
                                            final double maxArea, final int role, final Vec3 fallbackLocalPoint) {
         final Vec3 localPoint = accumulator.weight > 0.0D ? accumulator.average() : fallbackLocalPoint;
         final Vec3 localNormal = localNormalForRole(role);
-        final double weight = accumulator.weight <= 0.0D ? 0.0D : Math.max(0.08D, Math.min(1.0D, accumulator.weight / maxArea));
+        final double weight = accumulator.weight <= 0.0D ? 0.0D : accumulator.weight;
         return new ProfileFace(localPoint, localNormal, weight);
     }
 
@@ -438,7 +438,7 @@ public final class AeroSurfaceCache {
         final int minimum = Math.min(rawSamples.size(), Math.max(percentFloor, absoluteFloor));
         final int selectedCount = Math.min(rawSamples.size(), Math.max(minimum, requestedSamples));
         if (selectedCount >= rawSamples.size()) {
-            return normalizeProfileWeights(rawSamples);
+            return List.copyOf(rawSamples);
         }
 
         final Map<Integer, List<ProfileFace>> byRole = new HashMap<>();
@@ -496,24 +496,7 @@ public final class AeroSurfaceCache {
             }
             selected.addAll(aggregateRolePatches(roleFaces, count));
         }
-        return normalizeProfileWeights(selected);
-    }
-
-    private static List<ProfileFace> normalizeProfileWeights(final List<ProfileFace> samples) {
-        if (samples.isEmpty()) {
-            return List.of();
-        }
-        double totalArea = 0.0D;
-        for (final ProfileFace sample : samples) {
-            totalArea += Math.max(0.0D, sample.weight());
-        }
-        final double averageArea = totalArea <= 1.0e-12D ? 1.0D : totalArea / Math.max(1, samples.size());
-        final List<ProfileFace> normalized = new ArrayList<>(samples.size());
-        for (final ProfileFace sample : samples) {
-            final double weight = Math.max(0.05D, Math.min(24.0D, Math.max(0.0D, sample.weight()) / averageArea));
-            normalized.add(new ProfileFace(sample.point(), sample.normal(), weight));
-        }
-        return List.copyOf(normalized);
+        return List.copyOf(selected);
     }
 
     private static List<ProfileFace> aggregateRolePatches(final List<ProfileFace> roleFaces, final int targetCount) {
