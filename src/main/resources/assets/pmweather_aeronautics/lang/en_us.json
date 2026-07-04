@@ -55,5 +55,5 @@
   "pmweather_aeronautics.configuration.edgeWindSampleMargin": "Edge Wind Sample Margin",
   "pmweather_aeronautics.configuration.debugLogging": "Debug Logging",
   "force_group.pmweather_aeronautics.weather_wind": "PMWeather Wind",
-  "force_group.pmweather_aeronautics.weather_wind.description": "Wind sampled from ProtoManly's Weather"
+  "force_group.pmweather_aeronautics.weather_wind.description": "Wind pressure from PMWeather Aeronautics"
 }

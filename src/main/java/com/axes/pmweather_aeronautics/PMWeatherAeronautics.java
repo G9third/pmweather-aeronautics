@@ -22,6 +22,7 @@ public final class PMWeatherAeronautics {
 
     public PMWeatherAeronautics(final IEventBus modBus, final ModContainer modContainer) {
         PMWeatherForceGroups.register(modBus);
+
         backupOutdatedCommonConfigIfNeeded();
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
 
