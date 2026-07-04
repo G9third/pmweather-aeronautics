@@ -1,7 +1,6 @@
 package com.axes.pmweather_aeronautics;
 
 import dev.ryanhcode.sable.api.physics.force.ForceGroup;
-import dev.ryanhcode.sable.api.physics.force.ForceGroups;
 import dev.ryanhcode.sable.api.physics.force.ForceTotal;
 import dev.ryanhcode.sable.api.physics.force.QueuedForceGroup;
 import dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle;
@@ -40,14 +39,13 @@ public final class WeatherForceApplier {
     private static final double BODY_DYNAMIC_PRESSURE_NORMALIZATION = 0.8D;
     private static final double CENTER_FALLBACK_AREA = 1.0D;
     /**
-     * Use Sable's registered drag force group instead of an ad-hoc custom ForceGroup.
+     * Use PMWeather Aeronautics' registered Sable force group instead of an ad-hoc ForceGroup.
      *
-     * Sable/Create Aeronautics diagram data serializes queued force groups through Sable's
-     * force-group registry. A ForceGroup constructed directly here has no registry id, which can
-     * make simulated:diagram_data encoding hit a null entry and crash when opening contraption
-     * diagrams or using physics goggles.
+     * Create Aeronautics / Sable diagram data serializes queued force groups by registry id.
+     * A ForceGroup constructed directly in this class has no registry id and can crash
+     * simulated:diagram_data encoding. Do not use ForceGroups.DRAG.get() here either: that
+     * accessor exposes Veil's RegistryObject type, which is not on this project's compile classpath.
      */
-    private static final ForceGroup WEATHER_FORCE_GROUP = ForceGroups.DRAG.get();
 
     private static final Map<String, TornadoLiftState> TORNADO_LIFT_STATES = new HashMap<>();
     private static long lastLiftStatePruneTick = Long.MIN_VALUE;
@@ -109,7 +107,7 @@ public final class WeatherForceApplier {
                 Config.massScaling() * 0.25D
         ));
 
-        final QueuedForceGroup windGroup = subLevel.getOrCreateQueuedForceGroup(WEATHER_FORCE_GROUP);
+        final QueuedForceGroup windGroup = subLevel.getOrCreateQueuedForceGroup(PMWeatherForceGroups.weatherWind());
 
         // 0.6.0: aerodynamic profile pressure is the main wind force source.
         // Multiple exterior profile samples are converted through Sable ForceTotal; the center/COM sample is only fallback.
