@@ -344,16 +344,6 @@ final class WeatherWindField {
         }
     }
 
-    private static double faceAreaWeight(final double faceArea, final double maxFaceArea) {
-        if (!Double.isFinite(faceArea) || !Double.isFinite(maxFaceArea) || maxFaceArea <= 0.0D) {
-            return 1.0D;
-        }
-
-        final double ratio = Math.max(0.0D, Math.min(1.0D, faceArea / maxFaceArea));
-        final double strength = Config.aeroPatchAreaWeightStrength();
-        return Math.max(0.15D, 1.0D + (ratio - 1.0D) * strength);
-    }
-
     private static Vec3 sampleWindCached(final ServerSubLevel subLevel, final Vec3 samplePosition,
                                          final WindUse use, final int role, final int intervalTicks) {
         final long currentTick = subLevel.getLevel().getGameTime();

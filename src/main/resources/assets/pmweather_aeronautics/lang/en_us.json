@@ -40,6 +40,7 @@
   "pmweather_aeronautics.configuration.tornadoUpdraftThreshold": "Tornado Updraft Threshold",
   "pmweather_aeronautics.configuration.tornadoUpdraftStrength": "Tornado Updraft Strength",
   "pmweather_aeronautics.configuration.maxTornadoUpdraft": "Max Tornado Updraft",
+  "pmweather_aeronautics.configuration.tornadoUpdraftPressureStrength": "Tornado Updraft Pressure",
   "pmweather_aeronautics.configuration.tornadoUpdraftLiftHeight": "Tornado Updraft Lift Height",
   "pmweather_aeronautics.configuration.tornadoUpdraftHeightNoise": "Tornado Updraft Height Noise",
   "pmweather_aeronautics.configuration.tornadoUpdraftFadeStartRatio": "Updraft Fade Start",
