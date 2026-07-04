@@ -1,6 +1,7 @@
 package com.axes.pmweather_aeronautics;
 
 import dev.ryanhcode.sable.api.physics.force.ForceGroup;
+import dev.ryanhcode.sable.api.physics.force.ForceGroups;
 import dev.ryanhcode.sable.api.physics.force.ForceTotal;
 import dev.ryanhcode.sable.api.physics.force.QueuedForceGroup;
 import dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle;
@@ -10,7 +11,6 @@ import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.companion.math.Pose3d;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3d;
@@ -39,12 +39,15 @@ public final class WeatherForceApplier {
     private static int lastPressureGroups;
     private static final double BODY_DYNAMIC_PRESSURE_NORMALIZATION = 0.8D;
     private static final double CENTER_FALLBACK_AREA = 1.0D;
-    private static final ForceGroup WEATHER_FORCE_GROUP = new ForceGroup(
-            Component.literal("PMWeather Wind"),
-            Component.literal("Raw wind sampled from ProtoManly's Weather"),
-            0x5fa8ff,
-            true
-    );
+    /**
+     * Use Sable's registered drag force group instead of an ad-hoc custom ForceGroup.
+     *
+     * Sable/Create Aeronautics diagram data serializes queued force groups through Sable's
+     * force-group registry. A ForceGroup constructed directly here has no registry id, which can
+     * make simulated:diagram_data encoding hit a null entry and crash when opening contraption
+     * diagrams or using physics goggles.
+     */
+    private static final ForceGroup WEATHER_FORCE_GROUP = ForceGroups.DRAG.get();
 
     private static final Map<String, TornadoLiftState> TORNADO_LIFT_STATES = new HashMap<>();
     private static long lastLiftStatePruneTick = Long.MIN_VALUE;
