@@ -1,12 +1,12 @@
-# PMWeather Aeronautics 0.8.0
+# PMWeather Aeronautics 0.8.1
 
 PMWeather Aeronautics connects **ProtoManly's Weather / PMWeather** wind with **Sable / Create Aeronautics** physics objects.
 
 It lets Sable physics objects and Create Aeronautics contraptions react to PMWeather wind, storms, and tornadoes using exterior surface pressure. PMWeather Aeronautics samples wind from PMWeather, converts it into physics wind, applies pressure across exposed exterior faces, and passes the resulting force and torque into Sable so Sable handles movement, rotation, collisions, mass, and inertia.
 
-## 0.8.0 focus
+## 0.8.1 focus
 
-0.8.0 reworks body wind around a **quadratic, area-weighted surface pressure** model. Wind force now scales with wind speed squared and exposed surface area, so light 10-15 mph wind is much calmer while strong storm and tornado wind ramps up much harder.
+0.8.1 includes the quadratic, area-weighted body wind system introduced in 0.8.0 and adds compatibility with Create Aeronautics Lift Patch 1.1.0. The body wind system around a **quadratic, area-weighted surface pressure** model. Wind force now scales with wind speed squared and exposed surface area, so light 10-15 mph wind is much calmer while strong storm and tornado wind ramps up much harder.
 
 Main systems:
 
@@ -23,6 +23,7 @@ Main systems:
 - ProtoManly's Weather / PMWeather
 - Sable
 - Create Aeronautics / Create Aeronautics Bundled
+- Create Aeronautics Lift Patch 1.1.0 is supported but optional.
 
 ## Commands
 
@@ -44,7 +45,7 @@ All commands are under:
 
 ## Default config
 
-A fresh 0.8.0 config is generated at:
+A fresh 0.8.x config is generated at:
 
 ```text
 config/pmweather_aeronautics-common.toml
@@ -135,7 +136,7 @@ These settings control the main exterior pressure force applied to the whole Sab
 | --- | ---: | --- |
 | `enableBodyPush` | `true` | Enables whole-body exterior wind pressure. Disable this for airflow lift integration only, with no whole-contraption wind push. |
 | `enableBodyRelativeWindDrag` | `true` | Uses air-relative wind by subtracting the Sable body's current linear velocity from PMWeather wind. This prevents objects from being accelerated endlessly past the local air speed in one direction. |
-| `windInfluence` | `0.06` | Main body wind strength after PMWeather mph-style wind is converted to block/second physics speed. This is the main value to tune if all body wind feels too weak or too strong. With the 0.8.0 quadratic solver, tornado wind scales much harder than light wind. |
+| `windInfluence` | `0.06` | Main body wind strength after PMWeather mph-style wind is converted to block/second physics speed. This is the main value to tune if all body wind feels too weak or too strong. With the 0.8.x quadratic solver, tornado wind scales much harder than light wind. |
 | `massScaling` | `0.0` | Optional extra mass-based damping. `0.0` disables it. `1.0` is strongest. Sable/Rapier already accounts for object mass, so `0.0` is the clean default. Use this only as a gameplay helper if huge heavy builds move too easily. |
 | `aeroPatchPressureStrength` | `1.0` | Multiplier for the quadratic exterior pressure solver. This is a lower-level pressure multiplier than `windInfluence`. Usually keep this at `1.0` and tune `windInfluence` first. |
 | `aeroPatchAreaWeightStrength` | `1.0` | Controls how strongly exposed patch area affects force. `1.0` means physical area weighting, so larger exposed faces catch more total wind. `0.0` makes patches more equal-weighted and less physically realistic. |
@@ -190,7 +191,7 @@ These settings control PMWeather wind query cost and fallback sampling behavior.
 | --- | ---: | --- |
 | `bodyWindSampleIntervalTicks` | `5` | How often each Sable sub-level asks PMWeather for body wind samples, in ticks. `5` means four times per second. Cached wind is reused between samples and Sable physics substeps. |
 | `maxWindSamplesPerTick` | `512` | Global safety budget for PMWeather wind queries per server tick. Lower it if many active contraptions hurt TPS. Higher it if large contraptions need more wind detail and the server can handle it. |
-| `maxFallbackSurfaceWindSamples` | `12` | Maximum exterior fallback wind samples used by legacy compatibility paths. The main 0.8.0 body wind path primarily uses `maxAeroPatchSamplesPerObject`. |
+| `maxFallbackSurfaceWindSamples` | `12` | Maximum exterior fallback wind samples used by legacy compatibility paths. The main 0.8.x body wind path primarily uses `maxAeroPatchSamplesPerObject`. |
 | `enableEdgeWindSampling` | `true` | Enables extra fallback wind samples around the sub-level roof and edges for compatibility sampling paths. The main exterior patch system still handles normal body wind. |
 | `edgeWindSampleMargin` | `2.0` | Distance outside the sub-level bounding box used for fallback roof and edge wind samples. |
 
@@ -224,7 +225,7 @@ If tornado lift is too weak but horizontal tornado movement feels good, raise `t
 
 ## Config reset behavior
 
-0.8.0 can back up and regenerate configs that clearly look like older generated configs from the 0.7.3 line. It does not create extra sentinel files in the config folder.
+0.8.1 can back up and regenerate configs that clearly look like older generated configs from the 0.7.3 line. It does not create extra sentinel files in the config folder.
 
 If an old config needs to be reset, it is moved to a backup next to the config with a name like:
 
@@ -232,7 +233,7 @@ If an old config needs to be reset, it is moved to a backup next to the config w
 pmweather_aeronautics-common.pre-0_8_0.toml.bak
 ```
 
-Normal user edits are preserved on later launches after the fresh 0.8.0 config has been generated.
+Normal user edits are preserved on later launches after the fresh 0.8.x config has been generated.
 
 ## Compatibility notes
 

@@ -4,45 +4,79 @@ import dev.ryanhcode.sable.api.block.BlockSubLevelLiftProvider;
 import dev.ryanhcode.sable.companion.math.Pose3d;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3d;
+import org.joml.Vector3dc;
 
 public final class WeatherAirflow {
-    private static final Vector3d WORLD_SAMPLE = new Vector3d();
-    private static final Vector3d LOCAL_WIND = new Vector3d();
+    private static final ThreadLocal<Scratch> SCRATCH = ThreadLocal.withInitial(Scratch::new);
 
     private WeatherAirflow() {
     }
 
     /**
-     * Called from the BlockSubLevelLiftProvider mixin immediately after Sable converts the local block
-     * velocity into sub-level-local space. Sable's LIFT_VELO is mutable shared scratch state, so this
-     * method must stay tiny and allocation-light.
+     * Returns the rigid body's linear velocity relative to PMWeather airflow at this lift provider.
+     *
+     * This is called from Sable's concrete ServerSubLevel lift-provider invocation. Supplying
+     * world-space {@code linearVelocity - windVelocity} here is equivalent to subtracting the
+     * transformed wind from Sable's local LIFT_VELO scratch vector, but it avoids injecting into
+     * BlockSubLevelLiftProvider's default interface method. That interface method may be replaced by
+     * Create Aeronautics Lift Patch, which made the former interface injection incompatible.
      */
-    public static void applyWindToCurrentLiftVelocity(final BlockSubLevelLiftProvider.LiftProviderContext ctx,
-                                                       final ServerSubLevel subLevel) {
+    public static Vector3dc airRelativeLinearVelocity(
+            final BlockSubLevelLiftProvider.LiftProviderContext ctx,
+            final ServerSubLevel subLevel,
+            @Nullable final Pose3d localPose,
+            final Vector3dc linearVelocity
+    ) {
         if (!Config.enableAirflowLift()) {
-            return;
+            return linearVelocity;
         }
 
-        final Pose3d pose = subLevel.logicalPose();
-        WORLD_SAMPLE.set(ctx.pos().getX() + 0.5D, ctx.pos().getY() + 0.5D, ctx.pos().getZ() + 0.5D);
-        pose.transformPosition(WORLD_SAMPLE);
+        final Scratch scratch = SCRATCH.get();
+        scratch.worldSample.set(
+                ctx.pos().getX() + 0.5D,
+                ctx.pos().getY() + 0.5D,
+                ctx.pos().getZ() + 0.5D
+        );
 
-        final Vec3 samplePos = new Vec3(WORLD_SAMPLE.x, WORLD_SAMPLE.y, WORLD_SAMPLE.z);
+        // Match Sable's own lift-provider position transforms. Providers inside a kinematic
+        // contraption must first be transformed into sub-level space before the sub-level pose is
+        // transformed into world space.
+        if (localPose != null) {
+            localPose.transformPosition(scratch.worldSample);
+        }
+        subLevel.logicalPose().transformPosition(scratch.worldSample);
+
+        final Vec3 samplePos = new Vec3(
+                scratch.worldSample.x,
+                scratch.worldSample.y,
+                scratch.worldSample.z
+        );
         final Vec3 sampledWind = WeatherWindSampler.sampleLocalAirflowWindCached(subLevel, samplePos);
 
-        // Cached airflow wind is kept in PMWeather/mph-style units so thresholds stay readable.
-        // Convert only when feeding Sable's local lift velocity.
+        // Cached airflow wind remains in PMWeather/mph-style units so thresholds stay readable.
         if (sampledWind.length() <= Config.windThreshold()) {
-            return;
+            return linearVelocity;
         }
 
         final Vec3 physicsWind = WeatherWindField.pmweatherWindToPhysicsWind(sampledWind);
-        LOCAL_WIND.set(physicsWind.x, physicsWind.y, physicsWind.z).mul(Config.airflowInfluence());
-        pose.transformNormalInverse(LOCAL_WIND);
+        final double influence = Config.airflowInfluence();
 
-        // Sable's lift math uses local air-relative velocity. Subtracting wind makes lift providers
-        // behave as if the surrounding air is moving with PMWeather.
-        BlockSubLevelLiftProvider.LIFT_VELO.sub(LOCAL_WIND);
+        // Sable receives a world-space rigid-body velocity. It adds the provider's angular point
+        // velocity and transforms the result into local space inside whichever lift implementation
+        // is active (stock Sable or Create Aeronautics Lift Patch).
+        return scratch.airRelativeLinearVelocity
+                .set(linearVelocity)
+                .sub(
+                        physicsWind.x * influence,
+                        physicsWind.y * influence,
+                        physicsWind.z * influence
+                );
+    }
+
+    private static final class Scratch {
+        private final Vector3d worldSample = new Vector3d();
+        private final Vector3d airRelativeLinearVelocity = new Vector3d();
     }
 }
