@@ -6,7 +6,7 @@ public final class Config {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
     static {
-        BUILDER.comment("PMWeather Aeronautics config schema: 0.8.0 wind-0.06-quadratic-surface-wind");
+        BUILDER.comment("PMWeather Aeronautics config schema: 0.8.2 tuned-sampling-defaults");
         BUILDER.push("general");
     }
 
@@ -113,7 +113,7 @@ public final class Config {
     public static final ModConfigSpec.IntValue MAX_AERO_PATCH_SAMPLES_PER_OBJECT = BUILDER
             .comment("Maximum full-surface aero patches from one Sable object that may request fresh PMWeather wind during one body wind update when the global budget allows it.")
             .translation("pmweather_aeronautics.configuration.maxAeroPatchSamplesPerObject")
-            .defineInRange("maxAeroPatchSamplesPerObject", 512, 0, 8192);
+            .defineInRange("maxAeroPatchSamplesPerObject", 32, 0, 8192);
 
     public static final ModConfigSpec.DoubleValue MIN_AERO_PATCH_DETAIL_PERCENT = BUILDER
             .comment("Minimum percent of a full-resolution exterior patch set to preserve when smart patch LOD is forced by the wind sample budget. 0.05 means a 400-patch ship may merge down to about 20 representative patches.")
@@ -203,12 +203,12 @@ public final class Config {
     public static final ModConfigSpec.IntValue BODY_WIND_SAMPLE_INTERVAL_TICKS = BUILDER
             .comment("How often each Sable sub-level asks PMWeather for body-push wind samples, in game ticks. Cached raw wind is reused between samples and Sable physics substeps. 1 = every tick, 5 = four times per second.")
             .translation("pmweather_aeronautics.configuration.bodyWindSampleIntervalTicks")
-            .defineInRange("bodyWindSampleIntervalTicks", 5, 1, 200);
+            .defineInRange("bodyWindSampleIntervalTicks", 1, 1, 200);
 
     public static final ModConfigSpec.IntValue MAX_WIND_SAMPLES_PER_TICK = BUILDER
             .comment("Global safety budget for PMWeather wind queries per server tick. The patch sampler divides work fairly between active Sable objects, uses smart patch LOD, then falls back to cached wind if the hard budget is still reached.")
             .translation("pmweather_aeronautics.configuration.maxWindSamplesPerTick")
-            .defineInRange("maxWindSamplesPerTick", 512, 16, 100000);
+            .defineInRange("maxWindSamplesPerTick", 128, 16, 100000);
 
     public static final ModConfigSpec.IntValue MAX_FALLBACK_SURFACE_WIND_SAMPLES = BUILDER
             .comment("Maximum exterior fallback wind samples used by legacy compatibility sampling paths. Main 0.7 body aerodynamics use maxAeroPatchSamplesPerObject instead.")

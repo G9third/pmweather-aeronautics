@@ -44,7 +44,7 @@ public final class PMWeatherAeronautics {
         try {
             contents = Files.readString(configFile);
         } catch (final IOException exception) {
-            LOGGER.warn("Could not read PMWeather Aeronautics config for 0.8.0 reset check: {}", configFile, exception);
+            LOGGER.warn("Could not read PMWeather Aeronautics config for 0.8.2 reset check: {}", configFile, exception);
             return;
         }
 
@@ -56,14 +56,14 @@ public final class PMWeatherAeronautics {
         final Path backupFile = nextConfigResetBackupPath(configFile);
         try {
             Files.move(configFile, backupFile, StandardCopyOption.REPLACE_EXISTING);
-            LOGGER.info("PMWeather Aeronautics 0.8.0 moved an older config to {}. A fresh wind-0.06 quadratic surface-wind config will be generated.", backupFile.getFileName());
+            LOGGER.info("PMWeather Aeronautics 0.8.2 moved an older config to {}. A fresh tuned-sampling config will be generated.", backupFile.getFileName());
         } catch (final IOException exception) {
-            LOGGER.warn("Could not move old PMWeather Aeronautics config to {}. Delete {} manually if the 0.8.0 config does not regenerate cleanly.", backupFile, configFile, exception);
+            LOGGER.warn("Could not move old PMWeather Aeronautics config to {}. Delete {} manually if the 0.8.2 config does not regenerate cleanly.", backupFile, configFile, exception);
         }
     }
 
     private static boolean looksLikePreRealisticWindConfig(final String contents) {
-        if (contents.contains("PMWeather Aeronautics config schema: 0.8.0 wind-0.06-quadratic-surface-wind")) {
+        if (contents.contains("PMWeather Aeronautics config schema: 0.8.2 tuned-sampling-defaults")) {
             return false;
         }
 
@@ -75,6 +75,11 @@ public final class PMWeatherAeronautics {
         }
 
         return containsAny(contents,
+                // 0.8.0 / 0.8.1 generated configs before the 0.8.2 sampling defaults.
+                "PMWeather Aeronautics config schema: 0.8.0 wind-0.06-quadratic-surface-wind",
+                "maxAeroPatchSamplesPerObject = 512",
+                "bodyWindSampleIntervalTicks = 5",
+                "maxWindSamplesPerTick = 512",
                 // 0.5.x / 0.6.x removed or renamed settings.
                 "turbulenceMultiplier",
                 "surfaceShearFactor",
@@ -148,12 +153,12 @@ public final class PMWeatherAeronautics {
 
     private static Path nextConfigResetBackupPath(final Path configFile) {
         final Path directory = configFile.getParent();
-        final String baseName = MODID + "-common.pre-0_8_0.toml.bak";
+        final String baseName = MODID + "-common.pre-0_8_2.toml.bak";
         Path candidate = directory.resolve(baseName);
         if (!Files.exists(candidate)) {
             return candidate;
         }
-        candidate = directory.resolve(MODID + "-common.pre-0_8_0." + System.currentTimeMillis() + ".toml.bak");
+        candidate = directory.resolve(MODID + "-common.pre-0_8_2." + System.currentTimeMillis() + ".toml.bak");
         return candidate;
     }
 }
