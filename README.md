@@ -6,7 +6,7 @@ It lets Sable physics objects and Create Aeronautics contraptions react to PMWea
 
 ## 0.8.2 focus
 
-0.8.2 keeps the quadratic, area-weighted body wind system and Create Aeronautics Lift Patch compatibility from 0.8.1, while adopting lower per-object and global wind-sampling defaults for better performance. Body wind now refreshes every tick by default, but each object is limited to 32 fresh aero-patch samples and the global budget is 128 samples per tick.
+0.8.2 keeps the quadratic, area-weighted body wind system and Create Aeronautics Lift Patch compatibility from 0.8.1, while adopting lower per-object and global wind-sampling defaults for better performance. Whole-body wind refreshes every tick by default, while lift-provider airflow refreshes every two ticks to reduce the cost of numerous local lift samples. Each object remains limited to 32 fresh aero-patch samples and the global budget remains 128 samples per tick.
 
 Main systems:
 
@@ -61,7 +61,7 @@ enableTornadoSuction = true
 [airflow_lift]
 enableAirflowLift = true
 airflowInfluence = 1.0
-airflowWindSampleIntervalTicks = 5
+airflowWindSampleIntervalTicks = 2
 
 [body_wind]
 enableBodyPush = true
@@ -126,7 +126,7 @@ These settings affect Sable lift/drag providers, such as parts that use local ai
 | --- | ---: | --- |
 | `enableAirflowLift` | `true` | Injects local PMWeather wind into Sable lift/drag calculations so each lift provider sees wind at its own block position. Disable this if you only want whole-body wind pressure and not local lift-provider airflow. |
 | `airflowInfluence` | `1.0` | Multiplier for PMWeather wind used as aerodynamic airflow for lift providers. `1.0` means the internally converted PMWeather wind speed is used directly. Higher values make wings/lift providers feel stronger in weather. |
-| `airflowWindSampleIntervalTicks` | `5` | How often each local lift-provider sample asks PMWeather for fresh wind, in ticks. `5` means four times per second. Lower values update faster but cost more PMWeather wind queries. |
+| `airflowWindSampleIntervalTicks` | `2` | How often each local lift-provider sample asks PMWeather for fresh wind, in ticks. `2` means ten times per second. Lower values update faster but cost more PMWeather wind queries. |
 
 ### `[body_wind]`
 
