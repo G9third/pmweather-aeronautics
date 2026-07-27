@@ -1,12 +1,12 @@
-# PMWeather Aeronautics 0.8.1
+# PMWeather Aeronautics 0.8.2
 
 PMWeather Aeronautics connects **ProtoManly's Weather / PMWeather** wind with **Sable / Create Aeronautics** physics objects.
 
 It lets Sable physics objects and Create Aeronautics contraptions react to PMWeather wind, storms, and tornadoes using exterior surface pressure. PMWeather Aeronautics samples wind from PMWeather, converts it into physics wind, applies pressure across exposed exterior faces, and passes the resulting force and torque into Sable so Sable handles movement, rotation, collisions, mass, and inertia.
 
-## 0.8.1 focus
+## 0.8.2 focus
 
-0.8.1 includes the quadratic, area-weighted body wind system introduced in 0.8.0 and adds compatibility with Create Aeronautics Lift Patch 1.1.0. The body wind system around a **quadratic, area-weighted surface pressure** model. Wind force now scales with wind speed squared and exposed surface area, so light 10-15 mph wind is much calmer while strong storm and tornado wind ramps up much harder.
+0.8.2 keeps the quadratic, area-weighted body wind system and Create Aeronautics Lift Patch compatibility from 0.8.1, while adopting lower per-object and global wind-sampling defaults for better performance. Body wind now refreshes every tick by default, but each object is limited to 32 fresh aero-patch samples and the global budget is 128 samples per tick.
 
 Main systems:
 
@@ -79,7 +79,7 @@ differentialPressureTorqueStrength = 0.6
 maxDifferentialTorqueImpulse = 1000.0
 
 [aero_patch_sampling]
-maxAeroPatchSamplesPerObject = 512
+maxAeroPatchSamplesPerObject = 32
 minAeroPatchDetailPercent = 0.05
 minAeroPatchCount = 6
 maxCachedAeroPatches = 4096
@@ -99,8 +99,8 @@ tornadoGustScaleTicks = 55
 tornadoGustSpatialScale = 40.0
 
 [performance]
-bodyWindSampleIntervalTicks = 5
-maxWindSamplesPerTick = 512
+bodyWindSampleIntervalTicks = 1
+maxWindSamplesPerTick = 128
 maxFallbackSurfaceWindSamples = 12
 enableEdgeWindSampling = true
 edgeWindSampleMargin = 2.0
@@ -159,7 +159,7 @@ These settings control the exterior surface patch model used by body wind.
 
 | Setting | Default | What it does |
 | --- | ---: | --- |
-| `maxAeroPatchSamplesPerObject` | `512` | Maximum full-surface aero patches from one Sable object that may request fresh PMWeather wind during one body wind update when budget allows. Higher values preserve more detail on large structures but cost more samples. |
+| `maxAeroPatchSamplesPerObject` | `32` | Maximum full-surface aero patches from one Sable object that may request fresh PMWeather wind during one body wind update when budget allows. Higher values preserve more detail on large structures but cost more samples. |
 | `minAeroPatchDetailPercent` | `0.05` | Minimum fraction of a full-resolution patch set to preserve when sample budget forces smart patch LOD. `0.05` means a 400-patch ship may merge down to about 20 representative patches. |
 | `minAeroPatchCount` | `6` | Absolute minimum representative patch count for compact objects when smart LOD is used. `6` keeps simple cube-like objects represented by their main pressure directions. |
 | `maxCachedAeroPatches` | `4096` | Maximum full-resolution exterior patches cached per Sable object after greedy face merging. Higher values preserve more tiny surface regions but use more memory and processing. |
@@ -189,8 +189,8 @@ These settings control PMWeather wind query cost and fallback sampling behavior.
 
 | Setting | Default | What it does |
 | --- | ---: | --- |
-| `bodyWindSampleIntervalTicks` | `5` | How often each Sable sub-level asks PMWeather for body wind samples, in ticks. `5` means four times per second. Cached wind is reused between samples and Sable physics substeps. |
-| `maxWindSamplesPerTick` | `512` | Global safety budget for PMWeather wind queries per server tick. Lower it if many active contraptions hurt TPS. Higher it if large contraptions need more wind detail and the server can handle it. |
+| `bodyWindSampleIntervalTicks` | `1` | How often each Sable sub-level asks PMWeather for body wind samples, in ticks. `1` means every game tick. Cached wind is reused between Sable physics substeps. |
+| `maxWindSamplesPerTick` | `128` | Global safety budget for PMWeather wind queries per server tick. Lower it if many active contraptions hurt TPS. Higher it if large contraptions need more wind detail and the server can handle it. |
 | `maxFallbackSurfaceWindSamples` | `12` | Maximum exterior fallback wind samples used by legacy compatibility paths. The main 0.8.x body wind path primarily uses `maxAeroPatchSamplesPerObject`. |
 | `enableEdgeWindSampling` | `true` | Enables extra fallback wind samples around the sub-level roof and edges for compatibility sampling paths. The main exterior patch system still handles normal body wind. |
 | `edgeWindSampleMargin` | `2.0` | Distance outside the sub-level bounding box used for fallback roof and edge wind samples. |
@@ -225,7 +225,7 @@ If tornado lift is too weak but horizontal tornado movement feels good, raise `t
 
 ## Config reset behavior
 
-0.8.1 can back up and regenerate configs that clearly look like older generated configs from the 0.7.3 line. It does not create extra sentinel files in the config folder.
+0.8.2 can back up and regenerate configs that clearly look like older generated configs from the 0.7.3 line. It does not create extra sentinel files in the config folder.
 
 If an old config needs to be reset, it is moved to a backup next to the config with a name like:
 
