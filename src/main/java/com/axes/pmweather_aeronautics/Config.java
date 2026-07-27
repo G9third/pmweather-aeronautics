@@ -6,7 +6,7 @@ public final class Config {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
     static {
-        BUILDER.comment("PMWeather Aeronautics config schema: 0.8.2 tuned-sampling-defaults");
+        BUILDER.comment("PMWeather Aeronautics config schema: 0.8.2 body-1-airflow-2");
         BUILDER.push("general");
     }
 
@@ -38,7 +38,7 @@ public final class Config {
     public static final ModConfigSpec.IntValue AIRFLOW_WIND_SAMPLE_INTERVAL_TICKS = BUILDER
             .comment("How often each local lift-provider wind sample asks PMWeather for a fresh airflow value, in game ticks. Cached wind is reused between samples.")
             .translation("pmweather_aeronautics.configuration.airflowWindSampleIntervalTicks")
-            .defineInRange("airflowWindSampleIntervalTicks", 5, 1, 200);
+            .defineInRange("airflowWindSampleIntervalTicks", 2, 1, 200);
 
     static {
         BUILDER.pop();

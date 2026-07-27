@@ -44,7 +44,7 @@ public final class PMWeatherAeronautics {
         try {
             contents = Files.readString(configFile);
         } catch (final IOException exception) {
-            LOGGER.warn("Could not read PMWeather Aeronautics config for 0.8.2 reset check: {}", configFile, exception);
+            LOGGER.warn("Could not read PMWeather Aeronautics config for 0.8.2 sampling reset check: {}", configFile, exception);
             return;
         }
 
@@ -56,15 +56,19 @@ public final class PMWeatherAeronautics {
         final Path backupFile = nextConfigResetBackupPath(configFile);
         try {
             Files.move(configFile, backupFile, StandardCopyOption.REPLACE_EXISTING);
-            LOGGER.info("PMWeather Aeronautics 0.8.2 moved an older config to {}. A fresh tuned-sampling config will be generated.", backupFile.getFileName());
+            LOGGER.info("PMWeather Aeronautics 0.8.2 moved an older config to {}. A fresh body-1/airflow-2 sampling config will be generated.", backupFile.getFileName());
         } catch (final IOException exception) {
             LOGGER.warn("Could not move old PMWeather Aeronautics config to {}. Delete {} manually if the 0.8.2 config does not regenerate cleanly.", backupFile, configFile, exception);
         }
     }
 
     private static boolean looksLikePreRealisticWindConfig(final String contents) {
-        if (contents.contains("PMWeather Aeronautics config schema: 0.8.2 tuned-sampling-defaults")) {
+        if (contents.contains("PMWeather Aeronautics config schema: 0.8.2 body-1-airflow-2")) {
             return false;
+        }
+
+        if (contents.contains("PMWeather Aeronautics config schema: 0.8.2 both-wind-intervals-1")) {
+            return true;
         }
 
         if (contents.contains("[ground_drag]")
@@ -75,6 +79,8 @@ public final class PMWeatherAeronautics {
         }
 
         return containsAny(contents,
+                // Earlier 0.8.2 generated config before both wind intervals defaulted to 1.
+                "PMWeather Aeronautics config schema: 0.8.2 tuned-sampling-defaults",
                 // 0.8.0 / 0.8.1 generated configs before the 0.8.2 sampling defaults.
                 "PMWeather Aeronautics config schema: 0.8.0 wind-0.06-quadratic-surface-wind",
                 "maxAeroPatchSamplesPerObject = 512",
@@ -153,12 +159,12 @@ public final class PMWeatherAeronautics {
 
     private static Path nextConfigResetBackupPath(final Path configFile) {
         final Path directory = configFile.getParent();
-        final String baseName = MODID + "-common.pre-0_8_2.toml.bak";
+        final String baseName = MODID + "-common.pre-0_8_2b.toml.bak";
         Path candidate = directory.resolve(baseName);
         if (!Files.exists(candidate)) {
             return candidate;
         }
-        candidate = directory.resolve(MODID + "-common.pre-0_8_2." + System.currentTimeMillis() + ".toml.bak");
+        candidate = directory.resolve(MODID + "-common.pre-0_8_2b." + System.currentTimeMillis() + ".toml.bak");
         return candidate;
     }
 }
