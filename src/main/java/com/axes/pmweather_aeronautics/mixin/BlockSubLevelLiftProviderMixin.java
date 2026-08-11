@@ -43,6 +43,7 @@ public abstract class BlockSubLevelLiftProviderMixin {
             @Nullable final BlockSubLevelLiftProvider.LiftProviderGroup group
     ) {
         final Vector3dc airRelativeLinearVelocity = WeatherAirflow.airRelativeLinearVelocity(
+                provider,
                 ctx,
                 subLevel,
                 localPose,

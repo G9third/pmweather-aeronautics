@@ -1,5 +1,4 @@
 package com.axes.pmweather_aeronautics;
-
 import com.mojang.logging.LogUtils;
 import dev.ryanhcode.sable.platform.SableEventPlatform;
 import net.neoforged.bus.api.IEventBus;
@@ -9,78 +8,70 @@ import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.common.NeoForge;
 import org.slf4j.Logger;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-
 @Mod(PMWeatherAeronautics.MODID)
 public final class PMWeatherAeronautics {
     public static final String MODID = "pmweather_aeronautics";
     public static final Logger LOGGER = LogUtils.getLogger();
-
     public PMWeatherAeronautics(final IEventBus modBus, final ModContainer modContainer) {
         PMWeatherForceGroups.register(modBus);
-
         backupOutdatedCommonConfigIfNeeded();
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
-
         // Sable fires this once for each physics sub-step, which is the right time to add impulses.
         SableEventPlatform.INSTANCE.onPhysicsTick(WeatherForceApplier::onSablePrePhysicsTick);
-
         NeoForge.EVENT_BUS.addListener(DebugWindCommand::register);
         NeoForge.EVENT_BUS.addListener(DebugWindCommand::onServerTick);
     }
-
     private static void backupOutdatedCommonConfigIfNeeded() {
         final Path configFile = FMLPaths.CONFIGDIR.get().resolve(MODID + "-common.toml");
-
         if (!Files.isRegularFile(configFile)) {
             return;
         }
-
         final String contents;
         try {
             contents = Files.readString(configFile);
         } catch (final IOException exception) {
-            LOGGER.warn("Could not read PMWeather Aeronautics config for 0.8.2 sampling reset check: {}", configFile, exception);
+            LOGGER.warn("Could not read PMWeather Aeronautics config for 0.9.0 adaptive-airflow-batch reset check: {}", configFile, exception);
             return;
         }
-
         if (!looksLikePreRealisticWindConfig(contents)) {
             LOGGER.debug("PMWeather Aeronautics config does not look like an older reset target. Leaving it untouched.");
             return;
         }
-
         final Path backupFile = nextConfigResetBackupPath(configFile);
         try {
             Files.move(configFile, backupFile, StandardCopyOption.REPLACE_EXISTING);
-            LOGGER.info("PMWeather Aeronautics 0.8.2 moved an older config to {}. A fresh body-1/airflow-2 sampling config will be generated.", backupFile.getFileName());
+            LOGGER.info("PMWeather Aeronautics 0.9.0 moved an older config to {}. A fresh adaptive airflow-region and shared wind-budget config will be generated.", backupFile.getFileName());
         } catch (final IOException exception) {
-            LOGGER.warn("Could not move old PMWeather Aeronautics config to {}. Delete {} manually if the 0.8.2 config does not regenerate cleanly.", backupFile, configFile, exception);
+            LOGGER.warn("Could not move old PMWeather Aeronautics config to {}. Delete {} manually if the 0.9.0 config does not regenerate cleanly.", backupFile, configFile, exception);
         }
     }
-
     private static boolean looksLikePreRealisticWindConfig(final String contents) {
-        if (contents.contains("PMWeather Aeronautics config schema: 0.8.2 body-1-airflow-2")) {
+        if (contents.contains("PMWeather Aeronautics config schema: 0.8.2b adaptive-airflow-batch")) {
             return false;
         }
-
+        if (contents.contains("PMWeather Aeronautics config schema: 0.8.2a native-tornado-vector")) {
+            return true;
+        }
+        if (contents.contains("PMWeather Aeronautics config schema: 0.8.2 body-1-airflow-2")) {
+            return true;
+        }
         if (contents.contains("PMWeather Aeronautics config schema: 0.8.2 both-wind-intervals-1")) {
             return true;
         }
-
+        if (contents.contains("PMWeather Aeronautics config schema: 0.8.2 tuned-sampling-defaults")) {
+            return true;
+        }
         if (contents.contains("[ground_drag]")
                 || contents.contains("groundedHorizontalWindMultiplier")
                 || contents.contains("groundLinearDragStrength")
                 || contents.contains("groundAngularDragStrength")) {
             return true;
         }
-
         return containsAny(contents,
-                // Earlier 0.8.2 generated config before both wind intervals defaulted to 1.
-                "PMWeather Aeronautics config schema: 0.8.2 tuned-sampling-defaults",
                 // 0.8.0 / 0.8.1 generated configs before the 0.8.2 sampling defaults.
                 "PMWeather Aeronautics config schema: 0.8.0 wind-0.06-quadratic-surface-wind",
                 "maxAeroPatchSamplesPerObject = 512",
@@ -147,7 +138,6 @@ public final class PMWeatherAeronautics {
                 "0.5 keeps some protection against feedback/overshoot while leaving normal wind response mostly controlled by windInfluence"
         );
     }
-
     private static boolean containsAny(final String contents, final String... needles) {
         for (final String needle : needles) {
             if (contents.contains(needle)) {
@@ -156,7 +146,6 @@ public final class PMWeatherAeronautics {
         }
         return false;
     }
-
     private static Path nextConfigResetBackupPath(final Path configFile) {
         final Path directory = configFile.getParent();
         final String baseName = MODID + "-common.pre-0_8_2b.toml.bak";
