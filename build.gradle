@@ -46,6 +46,10 @@ def localJars = libsDir.exists() ? fileTree(dir: libsDir, include: ['*.jar']) : 
 def extractedCompanionDir = file("$buildDir/extracted-sable-companion-jars")
 def extractedCompanionJars = fileTree(dir: extractedCompanionDir, include: ['**/*.jar'])
 
+configurations {
+    sableBundle
+}
+
 def localJarNames = { -> localJars.files.collect { it.name.toLowerCase(Locale.ROOT) } }
 def hasLocalJarMatching = { List<String> terms ->
     localJarNames().any { name -> terms.every { term -> name.contains(term.toLowerCase(Locale.ROOT)) } }
@@ -64,7 +68,8 @@ dependencies {
 
     // Sable 2.0.3. Prefer libs/sable-neoforge-1.21.1-2.0.3.jar, then fall back to CurseMaven.
     if (!hasLocalSableJar()) {
-        compileOnly("curse.maven:sable-1312371:${sable_curse_file_id}") { transitive = false }
+        sableBundle("curse.maven:sable-1312371:${sable_curse_file_id}") { transitive = false }
+        compileOnly files(configurations.sableBundle)
     }
 
     // Sable 2 classes reference Sable Companion types like Pose3d/SubLevelAccess.
@@ -79,7 +84,19 @@ dependencies {
 
 
 tasks.register('extractBundledSableCompanion') {
-    inputs.files localJars
+    // Resolve the CurseMaven fallback only when no local Sable jar exists. This makes a clean
+    // source checkout buildable without manually populating libs/, while still allowing fully
+    // offline builds when the user's runtime Sable jar is copied into libs/.
+    def sableInputs = files({
+        if (hasLocalSableJar()) {
+            return localJars.files.findAll { jar ->
+                def name = jar.name.toLowerCase(Locale.ROOT)
+                name.contains('sable') && !name.contains('companion') && name.contains(sable_version)
+            }
+        }
+        return configurations.sableBundle.files
+    })
+    inputs.files sableInputs
     outputs.dir extractedCompanionDir
 
     doLast {
@@ -87,7 +104,7 @@ tasks.register('extractBundledSableCompanion') {
         delete outDir
         outDir.mkdirs()
 
-        localJars.files.findAll { jar ->
+        sableInputs.files.findAll { jar ->
             def name = jar.name.toLowerCase(Locale.ROOT)
             name.contains('sable') && !name.contains('companion')
         }.each { jar ->

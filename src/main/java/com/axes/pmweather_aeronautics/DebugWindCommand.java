@@ -1,5 +1,4 @@
 package com.axes.pmweather_aeronautics;
-
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandSourceStack;
@@ -11,34 +10,27 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
-
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
-
 public final class DebugWindCommand {
     private static final Set<UUID> LIVE_SAMPLE_MONITORS = new HashSet<>();
-
     private DebugWindCommand() {
     }
-
     public static void register(final RegisterCommandsEvent event) {
         final CommandDispatcher<CommandSourceStack> dispatcher = event.getDispatcher();
         registerRoot(dispatcher, "pmaero");
     }
-
     public static void onServerTick(final ServerTickEvent.Post event) {
         if (LIVE_SAMPLE_MONITORS.isEmpty()) {
             return;
         }
-
         final MinecraftServer server = event.getServer();
         if (server.getTickCount() % 20 != 0) {
             return;
         }
-
         final Component message = Component.literal(formatSampleStatsActionBar(WeatherWindSampler.sampleStatsSnapshot()));
         final Iterator<UUID> iterator = LIVE_SAMPLE_MONITORS.iterator();
         while (iterator.hasNext()) {
@@ -51,7 +43,6 @@ public final class DebugWindCommand {
             player.displayClientMessage(message, true);
         }
     }
-
     private static void registerRoot(final CommandDispatcher<CommandSourceStack> dispatcher, final String root) {
         dispatcher.register(Commands.literal(root)
                 .requires(source -> source.hasPermission(0))
@@ -76,22 +67,16 @@ public final class DebugWindCommand {
                         .then(Commands.literal("status")
                                 .executes(context -> WindDebugFile.status(context.getSource())))));
     }
-
     private static int showWind(final CommandSourceStack source) throws CommandSyntaxException {
         final ServerPlayer player = source.getPlayerOrException();
         final ServerLevel level = player.serverLevel();
         final Vec3 position = player.position();
         final Vec3 rawWind = WeatherWindSampler.sampleRawWindAt(level, position);
-
         final double horizontal = horizontalLength(rawWind);
         final double total = rawWind.length();
         final Vec3 physicsWind = WeatherWindField.pmweatherWindToPhysicsWind(rawWind);
         final double physicsHorizontal = horizontalLength(physicsWind);
         final double physicsTotal = physicsWind.length();
-        final double updraftEstimate = estimateBridgeUpdraft(horizontal);
-        final double estimatedFinalY = rawWind.y + updraftEstimate;
-        final double estimatedFinalYPhysics = WeatherWindField.pmweatherSpeedToBlocksPerSecond(estimatedFinalY);
-
         source.sendSuccess(() -> Component.literal("PMWeather wind at your position"), false);
         source.sendSuccess(() -> Component.literal(format(
                 "pos=(%.1f, %.1f, %.1f) raw=(x=%.3f, y=%.3f, z=%.3f)",
@@ -100,22 +85,13 @@ public final class DebugWindCommand {
                 "pmweatherSpeed=%.3f mph-style horizontal=%.3f direction=%s",
                 total, horizontal, horizontalDirection(rawWind))), false);
         source.sendSuccess(() -> Component.literal(format(
-                "physicsSpeed=%.3f blocks/s horizontal=%.3f blocks/s",
-                physicsTotal, physicsHorizontal)), false);
-
-        if (Config.enableTornadoUpdraftModel() && horizontal > Config.tornadoUpdraftThreshold()) {
-            source.sendSuccess(() -> Component.literal(format(
-                    "bridge tornado model: active, estimated extra updraft=%.3f mph-style, estimated final y=%.3f mph-style / %.3f blocks/s",
-                    updraftEstimate, estimatedFinalY, estimatedFinalYPhysics)), false);
-        } else {
-            source.sendSuccess(() -> Component.literal(format(
-                    "bridge tornado model: inactive here, threshold=%.3f, enabled=%s",
-                    Config.tornadoUpdraftThreshold(), Config.enableTornadoUpdraftModel())), false);
-        }
-
+                "vertical=%.3f mph-style / %.3f blocks/s",
+                rawWind.y, physicsWind.y)), false);
+        source.sendSuccess(() -> Component.literal(format(
+                "physicsSpeed=%.3f blocks/s horizontal=%.3f blocks/s (native PMWeather 3D tornado vector=%s)",
+                physicsTotal, physicsHorizontal, Config.enableTornadoSuction() ? "enabled" : "disabled")), false);
         return 1;
     }
-
     private static int showSampleStats(final CommandSourceStack source) {
         final WeatherWindSampler.SampleStats stats = WeatherWindSampler.sampleStatsSnapshot();
         source.sendSuccess(() -> Component.literal("PMWeather Aeronautics sample monitor"), false);
@@ -135,12 +111,10 @@ public final class DebugWindCommand {
                 "live updates: /pmaero samples live on  |  /pmaero samples live off"), false);
         return 1;
     }
-
     private static int toggleLiveSampleStats(final CommandSourceStack source) throws CommandSyntaxException {
         final ServerPlayer player = source.getPlayerOrException();
         return setLiveSampleStats(source, !LIVE_SAMPLE_MONITORS.contains(player.getUUID()));
     }
-
     private static int setLiveSampleStats(final CommandSourceStack source, final boolean enabled) throws CommandSyntaxException {
         final ServerPlayer player = source.getPlayerOrException();
         if (enabled) {
@@ -153,7 +127,6 @@ public final class DebugWindCommand {
         }
         return 1;
     }
-
     private static String formatSampleStatsActionBar(final WeatherWindSampler.SampleStats stats) {
         return format(
                 "PMWA patches: %d/%d fresh/tick | %d/s fresh | %d/s req | %d/s cached | %d/s capped | obj=%d | target=%d",
@@ -161,30 +134,14 @@ public final class DebugWindCommand {
                 stats.rateCacheHits(), stats.rateBudgetFallbacks(), stats.activeBodyObjectsThisTick(),
                 stats.lastSurfaceSampleTarget());
     }
-
-    private static double estimateBridgeUpdraft(final double horizontalSpeed) {
-        if (!Config.enableTornadoUpdraftModel()) {
-            return 0.0D;
-        }
-
-        final double threshold = Config.tornadoUpdraftThreshold();
-        if (horizontalSpeed <= threshold) {
-            return 0.0D;
-        }
-
-        return Math.min(Config.maxTornadoUpdraft(), (horizontalSpeed - threshold) * Config.tornadoUpdraftStrength());
-    }
-
     private static double horizontalLength(final Vec3 vec) {
         return Math.sqrt(vec.x * vec.x + vec.z * vec.z);
     }
-
     private static String horizontalDirection(final Vec3 vec) {
         final double horizontal = horizontalLength(vec);
         if (horizontal <= 1.0e-6D) {
             return "calm";
         }
-
         final String eastWest = vec.x > 0.0D ? "east" : "west";
         final String northSouth = vec.z > 0.0D ? "south" : "north";
         final double ax = Math.abs(vec.x);
@@ -197,7 +154,6 @@ public final class DebugWindCommand {
         }
         return "toward " + northSouth + "-" + eastWest;
     }
-
     private static String format(final String pattern, final Object... args) {
         return String.format(Locale.ROOT, pattern, args);
     }

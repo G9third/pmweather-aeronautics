@@ -1,17 +1,21 @@
 package com.axes.pmweather_aeronautics;
-
+import dev.protomanly.pmweather.event.GameBusEvents;
+import dev.protomanly.pmweather.weather.Storm;
+import dev.protomanly.pmweather.weather.WeatherHandler;
 import dev.protomanly.pmweather.weather.WindEngine;
+import dev.protomanly.pmweather.weather.storms.StormTypes;
 import dev.ryanhcode.sable.companion.math.Pose3d;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import dev.ryanhcode.sable.sublevel.plot.LevelPlot;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3d;
-
 import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -19,10 +23,10 @@ import java.util.HashMap;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
 /**
  * Samples raw PMWeather wind at exposed points around a Sable sub-level.
  *
@@ -56,7 +60,6 @@ final class WeatherWindField {
      * windInfluence=1.0 means realistic converted physics speed.
      */
     static final double PMWEATHER_MPH_TO_BLOCKS_PER_SECOND = 0.44704D;
-
     private static final Vec3 CENTER_NORMAL = Vec3.ZERO;
     private static final Vec3 ROOF_NORMAL = new Vec3(0.0D, 1.0D, 0.0D);
     private static final Vec3 BOTTOM_NORMAL = new Vec3(0.0D, -1.0D, 0.0D);
@@ -64,7 +67,6 @@ final class WeatherWindField {
     private static final Vec3 EAST_NORMAL = new Vec3(1.0D, 0.0D, 0.0D);
     private static final Vec3 NORTH_NORMAL = new Vec3(0.0D, 0.0D, -1.0D);
     private static final Vec3 SOUTH_NORMAL = new Vec3(0.0D, 0.0D, 1.0D);
-
     private static final int ROLE_CENTER = 0;
     private static final int ROLE_ROOF = 1;
     private static final int ROLE_WEST = 2;
@@ -73,9 +75,9 @@ final class WeatherWindField {
     private static final int ROLE_SOUTH = 5;
     private static final int ROLE_BOTTOM = 6;
     private static final int ROLE_PROFILE_BASE = 1000;
-
     private static final Map<WindCacheKey, CachedWind> WIND_CACHE = new HashMap<>();
     private static final Map<String, CachedAerodynamicProfile> PROFILE_CACHE = new HashMap<>();
+    private static final Map<ServerLevel, CachedRawWindBatchContext> RAW_BATCH_CONTEXT_CACHE = new HashMap<>();
     private static final Vector3d PROFILE_WORLD_POINT = new Vector3d();
     private static final Vector3d PROFILE_WORLD_NORMAL = new Vector3d();
     private static long budgetTick = Long.MIN_VALUE;
@@ -98,10 +100,8 @@ final class WeatherWindField {
     private static WeatherWindSampler.SampleStats lastSampleStats = WeatherWindSampler.SampleStats.empty(512);
     private static final Set<String> activeBodySampleSubLevelsThisTick = new HashSet<>();
     private static int previousTickBodySampleSubLevelCount = 1;
-
     private static Method boundingBoxMethod;
     private static boolean searchedBoundingBoxMethod;
-
     private static Method minXMethod;
     private static Method minYMethod;
     private static Method minZMethod;
@@ -109,29 +109,23 @@ final class WeatherWindField {
     private static Method maxYMethod;
     private static Method maxZMethod;
     private static Class<?> cachedBoundsClass;
-
     private WeatherWindField() {
     }
-
-
     static double pmweatherSpeedToBlocksPerSecond(final double speed) {
         if (!Double.isFinite(speed)) {
             return 0.0D;
         }
         return speed * PMWEATHER_MPH_TO_BLOCKS_PER_SECOND;
     }
-
     static Vec3 pmweatherWindToPhysicsWind(final Vec3 wind) {
         if (wind == null || wind == Vec3.ZERO || wind.lengthSqr() <= 1.0e-12D) {
             return Vec3.ZERO;
         }
         return wind.scale(PMWEATHER_MPH_TO_BLOCKS_PER_SECOND);
     }
-
     static Vec3 sampleBestWind(final ServerSubLevel subLevel, final Vec3 preferredPosition) {
         Vec3 bestWind = sampleWindUncached(subLevel, preferredPosition);
         double bestSpeed = bestWind.length();
-
         for (final WeatherWindSampler.WindSample sample : sampleWindPointsUncached(subLevel, preferredPosition)) {
             final Vec3 candidate = sample.wind();
             final double candidateSpeed = candidate.length();
@@ -140,14 +134,11 @@ final class WeatherWindField {
                 bestSpeed = candidateSpeed;
             }
         }
-
         return bestWind;
     }
-
     static Vec3 sampleBestAirflowWindCached(final ServerSubLevel subLevel, final Vec3 preferredPosition) {
         Vec3 bestWind = Vec3.ZERO;
         double bestSpeed = 0.0D;
-
         for (final WeatherWindSampler.WindSample sample : sampleWindPointsCached(
                 subLevel,
                 preferredPosition,
@@ -161,10 +152,8 @@ final class WeatherWindField {
                 bestSpeed = candidateSpeed;
             }
         }
-
         return bestWind;
     }
-
     static Vec3 sampleLocalAirflowWindCached(final ServerSubLevel subLevel, final Vec3 samplePosition) {
         if (subLevel == null || samplePosition == null) {
             return Vec3.ZERO;
@@ -177,7 +166,6 @@ final class WeatherWindField {
                 Config.airflowWindSampleIntervalTicks()
         );
     }
-
     static List<WeatherWindSampler.WindSample> sampleWindPointsCached(final ServerSubLevel subLevel, final Vec3 centerPosition) {
         return sampleWindPointsCached(
                 subLevel,
@@ -186,38 +174,181 @@ final class WeatherWindField {
                 Config.bodyWindSampleIntervalTicks()
         );
     }
-
     private static List<WeatherWindSampler.WindSample> sampleWindPointsCached(final ServerSubLevel subLevel, final Vec3 centerPosition,
                                                           final WindUse use, final int intervalTicks) {
         return sampleWindPoints(subLevel, centerPosition, use, Math.max(1, intervalTicks), true);
     }
-
     private static List<WeatherWindSampler.WindSample> sampleWindPointsUncached(final ServerSubLevel subLevel, final Vec3 centerPosition) {
         return sampleWindPoints(subLevel, centerPosition, WindUse.BODY, 1, false);
     }
-
     private static List<WeatherWindSampler.WindSample> sampleWindPoints(final ServerSubLevel subLevel, final Vec3 centerPosition,
-                                                    final WindUse use, final int intervalTicks,
-                                                    final boolean cached) {
+                                                     final WindUse use, final int intervalTicks,
+                                                     final boolean cached) {
+        // Compatibility/debug callers that ask for an AIRFLOW surface field keep the old path.
+        // The normal lift-provider path is collected by PhysicsTickWindBatch and resolved together
+        // with BODY below.
+        if (use != WindUse.BODY || !cached) {
+            return sampleWindPointsLegacy(subLevel, centerPosition, use, intervalTicks, cached);
+        }
+
+        final PreparedWindFrame frame = prepareBatchedWindFrame(subLevel, centerPosition, intervalTicks);
+        resolvePreparedWindFrames(List.of(frame));
+        return frame.bodySamples();
+    }
+
+    /**
+     * Collects this sub-level's body and airflow requests without querying PMWeather yet. Multiple
+     * prepared frames can then be resolved together so all active Sable objects in the level share
+     * one exact-coordinate deduplication pass and one per-tick PMWeather storm snapshot.
+     */
+    static PreparedWindFrame prepareBatchedWindFrame(final ServerSubLevel subLevel,
+                                                      @Nullable final Vec3 centerPosition) {
+        return prepareBatchedWindFrame(subLevel, centerPosition, Config.bodyWindSampleIntervalTicks());
+    }
+
+    private static PreparedWindFrame prepareBatchedWindFrame(final ServerSubLevel subLevel,
+                                                              @Nullable final Vec3 centerPosition,
+                                                              final int intervalTicks) {
+        final long preparationStarted = AeronauticsProfilerMetrics.timerStart();
+        if (centerPosition == null) {
+            final PhysicsTickWindBatch.Plan plan = PhysicsTickWindBatch.planProviderOnly(subLevel);
+            final List<PhysicsTickWindBatch.PendingRequest> providerRequests = plan.providerRequests();
+            final List<BatchWindRequest> requests = new ArrayList<>(providerRequests.size());
+            for (final PhysicsTickWindBatch.PendingRequest providerRequest : providerRequests) {
+                requests.add(new BatchWindRequest(
+                        providerRequest.samplePosition(),
+                        WindUse.AIRFLOW,
+                        providerRequest.cacheRole(),
+                        Config.airflowWindSampleIntervalTicks()
+                ));
+            }
+            final PreparedWindFrame frame = new PreparedWindFrame(subLevel, null, List.of(), providerRequests, requests);
+            AeronauticsProfilerMetrics.recordPreparationTime(preparationStarted);
+            return frame;
+        }
+
+        final AeroSurfaceCache.AerodynamicProfile profile = AeroSurfaceCache.get(subLevel);
+        final List<AeroSurfaceCache.ProfileFace> desiredFaces;
+        final int minimumFaces;
+        if (!Config.enableEdgeWindSampling() || profile.samples().isEmpty()) {
+            desiredFaces = List.of();
+            minimumFaces = 0;
+        } else {
+            desiredFaces = profile.selectedSamples(Math.max(0, Config.maxAeroPatchSamplesPerObject()));
+            minimumFaces = profile.selectedSamples(0).size();
+        }
+
+        final PhysicsTickWindBatch.Plan plan = PhysicsTickWindBatch.plan(
+                subLevel,
+                desiredFaces.size(),
+                minimumFaces,
+                true
+        );
+        final List<AeroSurfaceCache.ProfileFace> selectedFaces = profile.samples().isEmpty()
+                ? List.of()
+                : profile.selectedSamples(plan.bodyExteriorSamples());
+        recordSurfaceSampleTarget(selectedFaces.size());
+
+        final List<PreparedSurfaceSample> prepared = new ArrayList<>(selectedFaces.size());
+        if (!selectedFaces.isEmpty()) {
+            final Pose3d pose = subLevel.logicalPose();
+            final double margin = Config.edgeWindSampleMargin();
+            int profileIndex = 0;
+            for (final AeroSurfaceCache.ProfileFace face : selectedFaces) {
+                if (face.weight() <= 0.0D || face.point().lengthSqr() <= 1.0e-12D || face.normal().lengthSqr() <= 1.0e-12D) {
+                    continue;
+                }
+                PROFILE_WORLD_POINT.set(face.point().x, face.point().y, face.point().z);
+                pose.transformPosition(PROFILE_WORLD_POINT, PROFILE_WORLD_POINT);
+                PROFILE_WORLD_NORMAL.set(face.normal().x, face.normal().y, face.normal().z);
+                pose.transformNormal(PROFILE_WORLD_NORMAL);
+                if (PROFILE_WORLD_NORMAL.lengthSquared() <= 1.0e-12D) {
+                    continue;
+                }
+                PROFILE_WORLD_NORMAL.normalize();
+                final Vec3 applicationPosition = new Vec3(PROFILE_WORLD_POINT.x, PROFILE_WORLD_POINT.y, PROFILE_WORLD_POINT.z);
+                final Vec3 outwardNormal = new Vec3(PROFILE_WORLD_NORMAL.x, PROFILE_WORLD_NORMAL.y, PROFILE_WORLD_NORMAL.z);
+                if (isWorldBlockedNearExteriorFace(subLevel, applicationPosition, outwardNormal)) {
+                    continue;
+                }
+                final int surfaceRole = roleForNormal(face.normal());
+                final Vec3 pressureCenterPosition = profile.worldPoint(surfaceRole, applicationPosition, pose);
+                final Vec3 samplePosition = new Vec3(
+                        applicationPosition.x + outwardNormal.x * margin,
+                        applicationPosition.y + outwardNormal.y * margin,
+                        applicationPosition.z + outwardNormal.z * margin
+                );
+                prepared.add(new PreparedSurfaceSample(
+                        samplePosition,
+                        applicationPosition,
+                        outwardNormal,
+                        cacheRoleForFace(face, profileIndex++, profile.cacheSalt()),
+                        face.weight(),
+                        surfaceRole,
+                        pressureCenterPosition
+                ));
+            }
+        }
+
+        AeronauticsProfilerMetrics.addBodyPatches(prepared.size());
+        final List<PhysicsTickWindBatch.PendingRequest> providerRequests = plan.providerRequests();
+        final List<BatchWindRequest> requests = new ArrayList<>(1 + prepared.size() + providerRequests.size());
+        requests.add(new BatchWindRequest(centerPosition, WindUse.BODY, ROLE_CENTER, Math.max(1, intervalTicks)));
+        for (final PreparedSurfaceSample surface : prepared) {
+            requests.add(new BatchWindRequest(surface.samplePosition(), WindUse.BODY, surface.cacheRole(), Math.max(1, intervalTicks)));
+        }
+        for (final PhysicsTickWindBatch.PendingRequest providerRequest : providerRequests) {
+            requests.add(new BatchWindRequest(
+                    providerRequest.samplePosition(),
+                    WindUse.AIRFLOW,
+                    providerRequest.cacheRole(),
+                    Config.airflowWindSampleIntervalTicks()
+            ));
+        }
+        final PreparedWindFrame frame = new PreparedWindFrame(subLevel, centerPosition, prepared, providerRequests, requests);
+        AeronauticsProfilerMetrics.recordPreparationTime(preparationStarted);
+        return frame;
+    }
+
+    /** Resolve all prepared sub-levels in one same-tick global PMWeather request pass. */
+    static void resolvePreparedWindFrames(final List<PreparedWindFrame> frames) {
+        if (frames == null || frames.isEmpty()) {
+            return;
+        }
+        final List<ScopedBatchWindRequest> scoped = new ArrayList<>();
+        final List<Integer> starts = new ArrayList<>(frames.size());
+        for (final PreparedWindFrame frame : frames) {
+            starts.add(scoped.size());
+            for (final BatchWindRequest request : frame.requests()) {
+                scoped.add(new ScopedBatchWindRequest(frame.subLevel(), request));
+            }
+        }
+        final List<Vec3> resolved = sampleWindBatchCachedScoped(scoped);
+        for (int i = 0; i < frames.size(); i++) {
+            final PreparedWindFrame frame = frames.get(i);
+            final int start = starts.get(i);
+            final int end = start + frame.requests().size();
+            frame.acceptResolved(resolved.subList(start, end));
+        }
+    }
+
+    private static List<WeatherWindSampler.WindSample> sampleWindPointsLegacy(final ServerSubLevel subLevel,
+                                                                               final Vec3 centerPosition,
+                                                                               final WindUse use,
+                                                                               final int intervalTicks,
+                                                                               final boolean cached) {
         final int maxSurfaceSamples = effectiveSurfaceSampleLimit(subLevel, use);
         final List<WeatherWindSampler.WindSample> samples = new ArrayList<>(1 + maxSurfaceSamples);
-
-        // Center is kept as fallback/debug only. The normal wind force should come from exterior
-        // aero-profile samples so closed houses catch wind on outside walls instead of needing a
-        // hole above the center of mass.
         addSample(subLevel, samples, centerPosition, centerPosition, CENTER_NORMAL, use, ROLE_CENTER, intervalTicks, cached);
-
         if (!Config.enableEdgeWindSampling() || maxSurfaceSamples <= 0) {
             return samples;
         }
-
         final AeroSurfaceCache.AerodynamicProfile profile = cached
                 ? AeroSurfaceCache.get(subLevel)
                 : AeroSurfaceCache.build(subLevel);
         if (profile.samples().isEmpty()) {
             return samples;
         }
-
         final Pose3d pose = subLevel.logicalPose();
         final double margin = Config.edgeWindSampleMargin();
         final List<AeroSurfaceCache.ProfileFace> selectedProfileFaces = profile.selectedSamples(maxSurfaceSamples);
@@ -232,17 +363,14 @@ final class WeatherWindField {
             if (face.weight() <= 0.0D || face.point().lengthSqr() <= 1.0e-12D || face.normal().lengthSqr() <= 1.0e-12D) {
                 continue;
             }
-
             PROFILE_WORLD_POINT.set(face.point().x, face.point().y, face.point().z);
             pose.transformPosition(PROFILE_WORLD_POINT, PROFILE_WORLD_POINT);
-
             PROFILE_WORLD_NORMAL.set(face.normal().x, face.normal().y, face.normal().z);
             pose.transformNormal(PROFILE_WORLD_NORMAL);
             if (PROFILE_WORLD_NORMAL.lengthSquared() <= 1.0e-12D) {
                 continue;
             }
             PROFILE_WORLD_NORMAL.normalize();
-
             final Vec3 applicationPosition = new Vec3(PROFILE_WORLD_POINT.x, PROFILE_WORLD_POINT.y, PROFILE_WORLD_POINT.z);
             final Vec3 outwardNormal = new Vec3(PROFILE_WORLD_NORMAL.x, PROFILE_WORLD_NORMAL.y, PROFILE_WORLD_NORMAL.z);
             if (isWorldBlockedNearExteriorFace(subLevel, applicationPosition, outwardNormal)) {
@@ -255,13 +383,155 @@ final class WeatherWindField {
                     applicationPosition.y + outwardNormal.y * margin,
                     applicationPosition.z + outwardNormal.z * margin
             );
-
             addSample(subLevel, samples, samplePosition, applicationPosition, outwardNormal, use,
-                    cacheRoleForFace(face, profileIndex, profile.cacheSalt()), intervalTicks, cached, face.weight(), surfaceRole, pressureCenterPosition);
-            profileIndex++;
+                    cacheRoleForFace(face, profileIndex++, profile.cacheSalt()), intervalTicks, cached,
+                    face.weight(), surfaceRole, pressureCenterPosition);
+        }
+        return samples;
+    }
+
+    private static List<Vec3> sampleWindBatchCached(final ServerSubLevel subLevel,
+                                                     final List<BatchWindRequest> requests) {
+        if (requests.isEmpty()) {
+            return List.of();
+        }
+        final List<ScopedBatchWindRequest> scoped = new ArrayList<>(requests.size());
+        for (final BatchWindRequest request : requests) {
+            scoped.add(new ScopedBatchWindRequest(subLevel, request));
+        }
+        return sampleWindBatchCachedScoped(scoped);
+    }
+
+    /**
+     * Resolves requests from every active sub-level in one pass. Exact world coordinates are
+     * deduplicated even when they came from different Sable objects, while each object's cache key
+     * remains independent so interpolation and refresh intervals keep their old semantics.
+     */
+    private static List<Vec3> sampleWindBatchCachedScoped(final List<ScopedBatchWindRequest> scopedRequests) {
+        if (scopedRequests.isEmpty()) {
+            return List.of();
+        }
+        final long batchStarted = AeronauticsProfilerMetrics.timerStart();
+        final long currentTick = scopedRequests.get(0).subLevel().getLevel().getGameTime();
+        resetBudgetIfNeeded(currentTick);
+        pruneCacheIfNeeded(currentTick);
+
+        final List<Vec3> result = new ArrayList<>(scopedRequests.size());
+        for (int i = 0; i < scopedRequests.size(); i++) {
+            result.add(Vec3.ZERO);
         }
 
-        return samples;
+        final Map<RawWindPositionKey, PendingBatchGroup> groups = new LinkedHashMap<>();
+        for (int index = 0; index < scopedRequests.size(); index++) {
+            final ScopedBatchWindRequest scoped = scopedRequests.get(index);
+            final ServerSubLevel subLevel = scoped.subLevel();
+            final BatchWindRequest request = scoped.request();
+            final long requestTick = subLevel.getLevel().getGameTime();
+            if (requestTick != currentTick) {
+                // This path should only contain one same-tick physics frame. Treat a mismatched
+                // request independently rather than allowing stale cache timing to leak across ticks.
+                final List<Vec3> single = sampleWindBatchCached(subLevel, List.of(request));
+                result.set(index, single.isEmpty() ? Vec3.ZERO : single.get(0));
+                continue;
+            }
+
+            sampleRequestsThisTick++;
+            final WindCacheKey cacheKey = new WindCacheKey(
+                    String.valueOf(subLevel.getUniqueId()),
+                    request.use(),
+                    request.cacheRole()
+            );
+            final CachedWind existing = WIND_CACHE.get(cacheKey);
+            if (existing != null && currentTick - existing.tick() < Math.max(1, request.intervalTicks())) {
+                cacheHitsThisTick++;
+                AeronauticsProfilerMetrics.recordCacheHit();
+                result.set(index, existing.wind(currentTick));
+                continue;
+            }
+            final ServerLevel level = subLevel.getLevel();
+            final RawWindPositionKey positionKey = RawWindPositionKey.of(level, request.samplePosition());
+            groups.computeIfAbsent(
+                    positionKey,
+                    ignored -> new PendingBatchGroup(level, request.samplePosition(), new ArrayList<>())
+            ).entries().add(new PendingBatchEntry(index, request, cacheKey, existing));
+        }
+
+        int pendingEntries = 0;
+        for (final PendingBatchGroup group : groups.values()) {
+            pendingEntries += group.entries().size();
+        }
+        AeronauticsProfilerMetrics.recordBatch(
+                scopedRequests.size(),
+                groups.size(),
+                Math.max(0, pendingEntries - groups.size())
+        );
+
+        final Map<ServerLevel, RawWindBatchContext> rawContexts = new HashMap<>();
+        final int hardBudget = Math.max(1, Config.maxWindSamplesPerTick());
+        for (final PendingBatchGroup group : groups.values()) {
+            if (windQueriesThisTick >= hardBudget) {
+                for (final PendingBatchEntry entry : group.entries()) {
+                    budgetFallbacksThisTick++;
+                    if (entry.previous() == null) {
+                        zeroBudgetFallbacksThisTick++;
+                        AeronauticsProfilerMetrics.recordBudgetFallback(true);
+                        result.set(entry.resultIndex(), Vec3.ZERO);
+                    } else {
+                        AeronauticsProfilerMetrics.recordBudgetFallback(false);
+                        result.set(entry.resultIndex(), entry.previous().wind(currentTick));
+                    }
+                }
+                continue;
+            }
+
+            boolean centerQuery = false;
+            for (final PendingBatchEntry entry : group.entries()) {
+                if (entry.request().use() == WindUse.BODY && entry.request().cacheRole() == ROLE_CENTER) {
+                    centerQuery = true;
+                    break;
+                }
+            }
+            if (centerQuery) {
+                AeronauticsProfilerMetrics.recordCenterQuery();
+            }
+
+            final RawWindBatchContext rawContext = rawContexts.computeIfAbsent(
+                    group.level(),
+                    RawWindBatchContext::capture
+            );
+            final Vec3 sampled = sampleRawWindAt(group.level(), group.samplePosition(), rawContext);
+            windQueriesThisTick++;
+            for (final PendingBatchEntry entry : group.entries()) {
+                final Vec3 previousWind = entry.previous() == null ? sampled : entry.previous().wind(currentTick);
+                final CachedWind next = new CachedWind(
+                        previousWind,
+                        sampled,
+                        currentTick,
+                        Math.max(1, entry.request().intervalTicks())
+                );
+                WIND_CACHE.put(entry.cacheKey(), next);
+                result.set(entry.resultIndex(), next.wind(currentTick));
+            }
+        }
+        AeronauticsProfilerMetrics.recordResolutionTime(batchStarted);
+        return result;
+    }
+
+    static List<Vec3> samplePendingProviderWindBatch(final ServerSubLevel subLevel,
+                                                      final List<PhysicsTickWindBatch.PendingRequest> providerRequests) {
+        if (providerRequests == null || providerRequests.isEmpty()) {
+            return List.of();
+        }
+        final List<BatchWindRequest> requests = new ArrayList<>(providerRequests.size());
+        for (final PhysicsTickWindBatch.PendingRequest providerRequest : providerRequests) {
+            requests.add(new BatchWindRequest(
+                    providerRequest.samplePosition(),
+                    WindUse.AIRFLOW,
+                    providerRequest.cacheRole(),
+                    Config.airflowWindSampleIntervalTicks()
+            ));
+        }
+        return sampleWindBatchCached(subLevel, requests);
     }
 
     private static void addSampleIfRoom(final ServerSubLevel subLevel, final List<WeatherWindSampler.WindSample> samples,
@@ -273,14 +543,12 @@ final class WeatherWindField {
             addSample(subLevel, samples, samplePosition, applicationPosition, outwardNormal, use, role, intervalTicks, cached, areaWeight);
         }
     }
-
     private static void addSample(final ServerSubLevel subLevel, final List<WeatherWindSampler.WindSample> samples,
                                   final Vec3 samplePosition, final Vec3 applicationPosition,
                                   final Vec3 outwardNormal, final WindUse use, final int role,
                                   final int intervalTicks, final boolean cached) {
         addSample(subLevel, samples, samplePosition, applicationPosition, outwardNormal, use, role, intervalTicks, cached, 1.0D);
     }
-
     private static void addSample(final ServerSubLevel subLevel, final List<WeatherWindSampler.WindSample> samples,
                                   final Vec3 samplePosition, final Vec3 applicationPosition,
                                   final Vec3 outwardNormal, final WindUse use, final int role,
@@ -288,7 +556,6 @@ final class WeatherWindField {
         addSample(subLevel, samples, samplePosition, applicationPosition, outwardNormal, use, role, intervalTicks, cached,
                 areaWeight, roleForNormal(outwardNormal), applicationPosition);
     }
-
     private static void addSample(final ServerSubLevel subLevel, final List<WeatherWindSampler.WindSample> samples,
                                   final Vec3 samplePosition, final Vec3 applicationPosition,
                                   final Vec3 outwardNormal, final WindUse use, final int role,
@@ -299,14 +566,12 @@ final class WeatherWindField {
                 : sampleWindUncached(subLevel, samplePosition);
         samples.add(new WeatherWindSampler.WindSample(samplePosition, applicationPosition, outwardNormal, wind, areaWeight, surfaceRole, pressureCenterPosition));
     }
-
     private static int cacheRoleForFace(final AeroSurfaceCache.ProfileFace face, final int profileIndex, final int profileCacheSalt) {
         final int role = roleForNormal(face.normal());
         final int safeIndex = Math.max(0, Math.min(8191, profileIndex));
         final int salt = Math.max(0, Math.min(1023, profileCacheSalt));
         return ROLE_PROFILE_BASE + salt * 65536 + role * 8192 + safeIndex;
     }
-
     private static int airflowRoleForPosition(final Vec3 position) {
         final int x = (int) Math.floor(position.x);
         final int y = (int) Math.floor(position.y);
@@ -317,14 +582,12 @@ final class WeatherWindField {
         hash = 31 * hash + z;
         return 0x40000000 | (hash & 0x0fffffff);
     }
-
     private static boolean isWorldBlockedNearExteriorFace(final ServerSubLevel subLevel,
                                                          final Vec3 applicationPosition,
                                                          final Vec3 outwardNormal) {
         if (subLevel == null || applicationPosition == null || outwardNormal == null || outwardNormal.lengthSqr() <= 1.0e-12D) {
             return false;
         }
-
         try {
             final Vec3 normal = outwardNormal.normalize();
             final Vec3 probe = new Vec3(
@@ -343,21 +606,18 @@ final class WeatherWindField {
             return false;
         }
     }
-
     private static Vec3 sampleWindCached(final ServerSubLevel subLevel, final Vec3 samplePosition,
                                          final WindUse use, final int role, final int intervalTicks) {
         final long currentTick = subLevel.getLevel().getGameTime();
         resetBudgetIfNeeded(currentTick);
         pruneCacheIfNeeded(currentTick);
         sampleRequestsThisTick++;
-
         final WindCacheKey key = new WindCacheKey(String.valueOf(subLevel.getUniqueId()), use, role);
         final CachedWind cached = WIND_CACHE.get(key);
         if (cached != null && currentTick - cached.tick() < intervalTicks) {
             cacheHitsThisTick++;
             return cached.wind(currentTick);
         }
-
         if (windQueriesThisTick >= Math.max(1, Config.maxWindSamplesPerTick())) {
             budgetFallbacksThisTick++;
             if (cached == null) {
@@ -366,10 +626,8 @@ final class WeatherWindField {
             }
             return cached.wind(currentTick);
         }
-
         final Vec3 sampled = sampleWindUncached(subLevel, samplePosition);
         windQueriesThisTick++;
-
         // Do not snap directly to a new tornado direction. Use the current interpolated wind as the
         // start of the next segment and blend to the newly sampled raw PMWeather wind over the
         // next cache interval. This preserves raw PMWeather wind targets while removing visible
@@ -379,32 +637,140 @@ final class WeatherWindField {
         WIND_CACHE.put(key, next);
         return next.wind(currentTick);
     }
-
     /**
      * Returns PMWeather's raw wind vector in PMWeather/mph-style units. Do not use this directly
      * as a Sable physics velocity. Convert with pmweatherWindToPhysicsWind(...) at the point where
      * the value becomes body wind, lift-provider airflow, or Sable force.
+     *
+     * PMWeather's WindEngine currently reduces a normal supercell's native 3D tornado vector to
+     * a scalar speed and then rebuilds the tornado direction in the horizontal X/Z plane. Sample
+     * the non-tornadic WindEngine field first, then recompose tornado influence from each Storm's
+     * native getTornadicWindVector(...) so PMWeather's real vertical component reaches Sable.
      */
     static Vec3 sampleRawWindAt(final ServerLevel level, final Vec3 samplePosition) {
+        return sampleRawWindAt(level, samplePosition, RawWindBatchContext.capture(level));
+    }
+
+    private static Vec3 sampleRawWindAt(final ServerLevel level,
+                                        final Vec3 samplePosition,
+                                        final RawWindBatchContext context) {
+        final long rawStarted = AeronauticsProfilerMetrics.timerStart();
+        try {
+            final Vec3 baseWind = sampleBaseWindWithoutTornado(level, samplePosition, context);
+            if (!Config.enableTornadoSuction() || context.storms().isEmpty()) {
+                return baseWind;
+            }
+
+            Vec3 windWithDirectTornadoEffects = baseWind;
+            Vec3 nativeTornadoSum = Vec3.ZERO;
+            double maxTornadoSpeed = 0.0D;
+            double maxTornadoInfluence = 0.0D;
+
+            for (final Storm storm : context.storms()) {
+                if (storm == null || storm.visualOnly || !storm.isTornadic() || storm.position == null) {
+                    continue;
+                }
+                final Vec3 relative = samplePosition.subtract(storm.position);
+                final double horizontalDistance = Math.sqrt(relative.x * relative.x + relative.z * relative.z);
+                final int minimumRadius = storm.is(StormTypes.FIRE_WHIRL) ? 20 : 40;
+                final double maxDistance = Math.max((int) storm.width, minimumRadius) * 2.0D;
+                if (!Double.isFinite(horizontalDistance) || horizontalDistance > maxDistance) {
+                    continue;
+                }
+
+                if (storm.is(StormTypes.FIRE_WHIRL)) {
+                    final double tornadoSpeed = storm.getTornadicWind(samplePosition, false);
+                    if (!Double.isFinite(tornadoSpeed) || tornadoSpeed <= 1.0e-12D) {
+                        continue;
+                    }
+                    final Vec3 inward = horizontalUnit(-relative.x, -relative.z);
+                    final Vec3 rotational = horizontalUnit(relative.z, -relative.x);
+                    final Vec3 direction = inward.scale(0.35D).add(rotational.scale(0.65D)).normalize();
+                    windWithDirectTornadoEffects = windWithDirectTornadoEffects
+                            .add(direction.scale(tornadoSpeed))
+                            .add(0.0D, tornadoSpeed / 7.0D, 0.0D);
+                    continue;
+                }
+
+                final Vec3 nativeTornado = storm.getTornadicWindVector(samplePosition, false);
+                if (!isFiniteWind(nativeTornado) || nativeTornado.lengthSqr() <= 1.0e-12D) {
+                    continue;
+                }
+                final double tornadoSpeed = nativeTornado.length();
+                nativeTornadoSum = nativeTornadoSum.add(nativeTornado);
+                maxTornadoSpeed = Math.max(maxTornadoSpeed, tornadoSpeed);
+                if (storm.is(StormTypes.SUPERCELL)) {
+                    final double influenceDenominator = clamp(
+                            storm.windspeed,
+                            60.0D,
+                            Math.max(storm.windspeed / 1.5D, 60.0D)
+                    );
+                    final double influence = influenceDenominator <= 1.0e-12D
+                            ? 0.0D
+                            : clamp(tornadoSpeed / influenceDenominator, 0.0D, 1.0D);
+                    maxTornadoInfluence = Math.max(maxTornadoInfluence, influence);
+                }
+            }
+
+            if (maxTornadoInfluence <= 0.0D || nativeTornadoSum.lengthSqr() <= 1.0e-12D) {
+                return windWithDirectTornadoEffects;
+            }
+            final Vec3 tornadoDirection = nativeTornadoSum.normalize();
+            final Vec3 baseDirection = windWithDirectTornadoEffects.lengthSqr() > 1.0e-12D
+                    ? windWithDirectTornadoEffects.normalize()
+                    : Vec3.ZERO;
+            Vec3 mixedDirection = baseDirection.lerp(tornadoDirection, maxTornadoInfluence);
+            mixedDirection = mixedDirection.lengthSqr() <= 1.0e-12D ? tornadoDirection : mixedDirection.normalize();
+            final double finalSpeed = Math.max(windWithDirectTornadoEffects.length(), maxTornadoSpeed);
+            return mixedDirection.scale(finalSpeed);
+        } finally {
+            AeronauticsProfilerMetrics.recordRawQuery(rawStarted);
+        }
+    }
+
+    private static Vec3 sampleBaseWindWithoutTornado(final ServerLevel level,
+                                                     final Vec3 samplePosition,
+                                                     final RawWindBatchContext context) {
+        // PMWeather's 5-argument overload computes MOTION_BLOCKING terrain height before entering
+        // this public terrain-height overload. Do that exact lookup once per X/Z column in the
+        // same-tick batch instead. Unlike the old experimental reflective call, this is a direct
+        // compile-time invocation of PMWeather's public API and preserves the same flags/math.
+        final int terrainY = context.terrainHeight(level, samplePosition);
         return WindEngine.getWind(
                 samplePosition,
                 level,
                 false,
-                !Config.enableTornadoSuction(),
-                true
+                true,
+                true,
+                false,
+                false,
+                terrainY
         );
     }
 
+    private static Vec3 horizontalUnit(final double x, final double z) {
+        final Vec3 vector = new Vec3(x, 0.0D, z);
+        return vector.lengthSqr() <= 1.0e-12D ? Vec3.ZERO : vector.normalize();
+    }
+
+    private static boolean isFiniteWind(final Vec3 wind) {
+        return wind != null
+                && Double.isFinite(wind.x)
+                && Double.isFinite(wind.y)
+                && Double.isFinite(wind.z);
+    }
+
+    private static double clamp(final double value, final double min, final double max) {
+        return Math.max(min, Math.min(max, value));
+    }
     private static Vec3 sampleWindUncached(final ServerSubLevel subLevel, final Vec3 samplePosition) {
         return sampleRawWindAt(subLevel.getLevel(), samplePosition);
     }
-
     private static void resetBudgetIfNeeded(final long currentTick) {
         if (budgetTick != currentTick) {
             if (budgetTick != Long.MIN_VALUE) {
                 completeSampleStatsWindow(budgetTick);
             }
-
             budgetTick = currentTick;
             windQueriesThisTick = 0;
             sampleRequestsThisTick = 0;
@@ -418,19 +784,16 @@ final class WeatherWindField {
             activeBodySampleSubLevelsThisTick.clear();
         }
     }
-
     private static void completeSampleStatsWindow(final long completedTick) {
         if (rateWindowStartTick == Long.MIN_VALUE) {
             rateWindowStartTick = completedTick;
         }
-
         rateWindowTicks++;
         rateWindowFreshQueries += windQueriesThisTick;
         rateWindowRequestedSamples += sampleRequestsThisTick;
         rateWindowCacheHits += cacheHitsThisTick;
         rateWindowBudgetFallbacks += budgetFallbacksThisTick;
         rateWindowZeroFallbacks += zeroBudgetFallbacksThisTick;
-
         final int activeObjects = activeBodySampleSubLevelsThisTick.size();
         final int minTarget = minSurfaceSampleTargetThisTick == Integer.MAX_VALUE ? 0 : minSurfaceSampleTargetThisTick;
         final double seconds = Math.max(1.0D / 20.0D, rateWindowTicks / 20.0D);
@@ -483,7 +846,6 @@ final class WeatherWindField {
             );
         }
     }
-
     static WeatherWindSampler.SampleStats sampleStatsSnapshot() {
         return new WeatherWindSampler.SampleStats(
                 budgetTick,
@@ -505,7 +867,6 @@ final class WeatherWindField {
                 lastSampleStats.rateZeroFallbacks()
         );
     }
-
     private static int effectiveSurfaceSampleLimit(final ServerSubLevel subLevel, final WindUse use) {
         final int configuredMax = evenFloor(Math.max(0, Math.min(8192,
                 use == WindUse.BODY ? Config.maxAeroPatchSamplesPerObject() : Config.maxFallbackSurfaceWindSamples())));
@@ -513,21 +874,16 @@ final class WeatherWindField {
             recordSurfaceSampleTarget(configuredMax);
             return configuredMax;
         }
-
         final long currentTick = subLevel.getLevel().getGameTime();
         resetBudgetIfNeeded(currentTick);
-
         final String subLevelId = String.valueOf(subLevel.getUniqueId());
         activeBodySampleSubLevelsThisTick.add(subLevelId);
-
         final int activeEstimate = Math.max(previousTickBodySampleSubLevelCount, activeBodySampleSubLevelsThisTick.size());
         final int hardBudget = Math.max(1, Config.maxWindSamplesPerTick());
         final int perObjectTotalBudget = Math.max(1, hardBudget / Math.max(1, activeEstimate));
-
         // The center sample is still requested for fallback/debug and counts against the hard query
         // budget, so reserve one slot before assigning exterior aero-profile surface samples.
         final int fairSurfaceBudget = evenFloor(Math.max(0, perObjectTotalBudget - 1));
-
         // Reduce evenly down to this minimum before allowing the older hard budget/cache fallback to
         // decide which requests get fresh PMWeather wind.
         final int configuredMin = Math.min(configuredMax, evenFloor(Math.max(0, Math.min(8192, Config.minAeroPatchCount()))));
@@ -535,24 +891,20 @@ final class WeatherWindField {
         recordSurfaceSampleTarget(target);
         return target;
     }
-
     private static void recordSurfaceSampleTarget(final int target) {
         final int evenTarget = evenFloor(target);
         lastSurfaceSampleTargetThisTick = evenTarget;
         minSurfaceSampleTargetThisTick = Math.min(minSurfaceSampleTargetThisTick, evenTarget);
         maxSurfaceSampleTargetThisTick = Math.max(maxSurfaceSampleTargetThisTick, evenTarget);
     }
-
     private static int evenFloor(final int value) {
         final int clamped = Math.max(0, value);
         return clamped - (clamped & 1);
     }
-
     private static void pruneCacheIfNeeded(final long currentTick) {
         if (lastPruneTick == currentTick || currentTick % 200L != 0L) {
             return;
         }
-
         lastPruneTick = currentTick;
         final Iterator<Map.Entry<WindCacheKey, CachedWind>> iterator = WIND_CACHE.entrySet().iterator();
         while (iterator.hasNext()) {
@@ -561,7 +913,6 @@ final class WeatherWindField {
                 iterator.remove();
             }
         }
-
         final Iterator<Map.Entry<String, CachedAerodynamicProfile>> profileIterator = PROFILE_CACHE.entrySet().iterator();
         while (profileIterator.hasNext()) {
             final Map.Entry<String, CachedAerodynamicProfile> entry = profileIterator.next();
@@ -570,30 +921,25 @@ final class WeatherWindField {
             }
         }
     }
-
     private static AerodynamicProfile getAerodynamicProfileCached(final ServerSubLevel subLevel) {
         final String key = String.valueOf(subLevel.getUniqueId());
         final ProfileBounds bounds = getProfileBounds(subLevel);
         if (bounds == null) {
             return AerodynamicProfile.EMPTY;
         }
-
         final long currentTick = subLevel.getLevel().getGameTime();
         final CachedAerodynamicProfile cached = PROFILE_CACHE.get(key);
         if (cached != null && cached.bounds().equals(bounds) && currentTick - cached.tick() < 1200L) {
             return cached.profile();
         }
-
         final AerodynamicProfile profile = buildAerodynamicProfile(subLevel, bounds);
         PROFILE_CACHE.put(key, new CachedAerodynamicProfile(bounds, profile, currentTick));
         return profile;
     }
-
     private static AerodynamicProfile buildAerodynamicProfile(final ServerSubLevel subLevel) {
         final ProfileBounds bounds = getProfileBounds(subLevel);
         return bounds == null ? AerodynamicProfile.EMPTY : buildAerodynamicProfile(subLevel, bounds);
     }
-
     private static AerodynamicProfile buildAerodynamicProfile(final ServerSubLevel subLevel, final ProfileBounds bounds) {
         // 0.6.0 full-surface patch pipeline:
         // Use the actual exposed block faces from the Sable plot, greedily merge connected coplanar
@@ -603,12 +949,10 @@ final class WeatherWindField {
         if (rawSurfacePatches.isEmpty()) {
             return AerodynamicProfile.EMPTY;
         }
-
         final int maxCachedPatches = Math.max(64, Math.min(32768, Config.maxCachedAeroPatches()));
         final List<ProfileFace> cachedPatches = rawSurfacePatches.size() > maxCachedPatches
                 ? selectProfileSamples(rawSurfacePatches, maxCachedPatches)
                 : normalizeProfileWeights(rawSurfacePatches);
-
         final ProfileAccumulator west = new ProfileAccumulator();
         final ProfileAccumulator east = new ProfileAccumulator();
         final ProfileAccumulator north = new ProfileAccumulator();
@@ -619,10 +963,8 @@ final class WeatherWindField {
             accumulatorForRole(roleForNormal(face.normal()), west, east, north, south, roof, bottom)
                     .add(face.point().x, face.point().y, face.point().z, Math.max(0.0D, face.weight()));
         }
-
         final double maxArea = Math.max(1.0D, Math.max(Math.max(west.weight, east.weight),
                 Math.max(Math.max(north.weight, south.weight), Math.max(roof.weight, bottom.weight))));
-
         return new AerodynamicProfile(
                 profileFace(west, maxArea, ROLE_WEST, new Vec3(bounds.minX(), midpoint(bounds.minY(), bounds.maxY() + 1.0D), midpoint(bounds.minZ(), bounds.maxZ() + 1.0D))),
                 profileFace(east, maxArea, ROLE_EAST, new Vec3(bounds.maxX() + 1.0D, midpoint(bounds.minY(), bounds.maxY() + 1.0D), midpoint(bounds.minZ(), bounds.maxZ() + 1.0D))),
@@ -633,7 +975,6 @@ final class WeatherWindField {
                 cachedPatches
         );
     }
-
     private static ProfileAccumulator accumulatorForRole(final int role,
                                                          final ProfileAccumulator west,
                                                          final ProfileAccumulator east,
@@ -650,7 +991,6 @@ final class WeatherWindField {
             default -> west;
         };
     }
-
     private static List<ProfileFace> buildFullResolutionSurfacePatches(final ServerSubLevel subLevel,
                                                                        final ProfileBounds bounds) {
         final Map<SurfacePlaneKey, Set<Long>> planes = new HashMap<>();
@@ -682,7 +1022,6 @@ final class WeatherWindField {
                 }
             }
         }
-
         final List<ProfileFace> patches = new ArrayList<>();
         for (final Map.Entry<SurfacePlaneKey, Set<Long>> entry : planes.entrySet()) {
             mergePlaneCells(entry.getKey(), entry.getValue(), patches);
@@ -694,8 +1033,6 @@ final class WeatherWindField {
                 .thenComparingDouble(face -> face.point().z));
         return patches;
     }
-
-
     private static Set<Long> computeFullResolutionOutsideAir(final ServerSubLevel subLevel,
                                                              final ProfileBounds bounds) {
         final int minX = bounds.minX() - 1;
@@ -708,7 +1045,6 @@ final class WeatherWindField {
         final ArrayDeque<int[]> queue = new ArrayDeque<>();
         queue.add(new int[] {minX, minY, minZ});
         outside.add(packAirCell(minX - minX, minY - minY, minZ - minZ));
-
         while (!queue.isEmpty()) {
             final int[] current = queue.removeFirst();
             fullResolutionFloodNeighbor(subLevel, outside, queue, minX, minY, minZ, maxX, maxY, maxZ,
@@ -726,7 +1062,6 @@ final class WeatherWindField {
         }
         return outside;
     }
-
     private static void fullResolutionFloodNeighbor(final ServerSubLevel subLevel,
                                                     final Set<Long> outside,
                                                     final ArrayDeque<int[]> queue,
@@ -743,7 +1078,6 @@ final class WeatherWindField {
         outside.add(packed);
         queue.add(new int[] {x, y, z});
     }
-
     private static boolean isFullResolutionOutsideAir(final Set<Long> outside,
                                                       final ProfileBounds bounds,
                                                       final int x, final int y, final int z) {
@@ -758,13 +1092,11 @@ final class WeatherWindField {
         }
         return outside.contains(packAirCell(x - minX, y - minY, z - minZ));
     }
-
     private static long packAirCell(final int x, final int y, final int z) {
         return ((long) (x & 0x1fffff) << 42)
                 | ((long) (y & 0x1fffff) << 21)
                 | (z & 0x1fffffL);
     }
-
     private static void addSurfaceCell(final Map<SurfacePlaneKey, Set<Long>> planes,
                                        final int role, final int plane,
                                        final int a, final int b,
@@ -772,19 +1104,15 @@ final class WeatherWindField {
         final SurfacePlaneKey key = new SurfacePlaneKey(role, plane, minA, minB);
         planes.computeIfAbsent(key, ignored -> new HashSet<>()).add(packCell(a - minA, b - minB));
     }
-
     private static long packCell(final int a, final int b) {
         return (((long) a) << 32) ^ (b & 0xffffffffL);
     }
-
     private static int unpackA(final long packed) {
         return (int) (packed >> 32);
     }
-
     private static int unpackB(final long packed) {
         return (int) packed;
     }
-
     private static void mergePlaneCells(final SurfacePlaneKey key, final Set<Long> cells,
                                         final List<ProfileFace> patches) {
         if (cells.isEmpty()) {
@@ -795,7 +1123,6 @@ final class WeatherWindField {
         sorted.sort(Comparator
                 .comparingInt((Long packed) -> unpackA(packed))
                 .thenComparingInt((Long packed) -> unpackB(packed)));
-
         for (final long start : sorted) {
             if (!remaining.contains(start)) {
                 continue;
@@ -824,7 +1151,6 @@ final class WeatherWindField {
             patches.add(mergedPatch(key, a0, b0, height, width));
         }
     }
-
     private static ProfileFace mergedPatch(final SurfacePlaneKey key, final int a0, final int b0,
                                            final int height, final int width) {
         final double area = Math.max(1.0D, height * (double) width);
@@ -839,7 +1165,6 @@ final class WeatherWindField {
         };
         return new ProfileFace(point, normal, area);
     }
-
     private static ProfileFace profileFace(final ProfileAccumulator accumulator,
                                            final double maxArea, final int role, final Vec3 fallbackLocalPoint) {
         // Store LOCAL profile data in the cache. World-space pressure points/normals must be computed
@@ -849,14 +1174,11 @@ final class WeatherWindField {
         final double weight = accumulator.weight <= 0.0D ? 0.0D : Math.max(0.08D, Math.min(1.0D, accumulator.weight / maxArea));
         return new ProfileFace(localPoint, localNormal, weight);
     }
-
-
     private static List<ProfileFace> selectProfileSamples(final List<ProfileFace> rawSamples,
                                                           final int requestedSamples) {
         if (rawSamples.isEmpty() || requestedSamples <= 0) {
             return List.of();
         }
-
         final int percentFloor = (int) Math.ceil(rawSamples.size() * Math.max(0.0D, Math.min(1.0D, Config.minAeroPatchDetailPercent())));
         final int absoluteFloor = Math.max(1, Math.min(256, Config.minAeroPatchCount()));
         final int minimum = Math.min(rawSamples.size(), Math.max(percentFloor, absoluteFloor));
@@ -864,7 +1186,6 @@ final class WeatherWindField {
         if (selectedCount >= rawSamples.size()) {
             return normalizeProfileWeights(rawSamples);
         }
-
         final Map<Integer, List<ProfileFace>> byRole = new HashMap<>();
         final Map<Integer, Double> roleAreas = new HashMap<>();
         double totalArea = 0.0D;
@@ -878,11 +1199,9 @@ final class WeatherWindField {
         if (byRole.isEmpty() || totalArea <= 0.0D) {
             return List.of();
         }
-
         final Map<Integer, Integer> allocation = new HashMap<>();
         final List<Integer> roles = new ArrayList<>(byRole.keySet());
         roles.sort(Comparator.comparingDouble((Integer role) -> -roleAreas.getOrDefault(role, 0.0D)));
-
         int remaining = selectedCount;
         for (final int role : roles) {
             if (remaining <= 0) {
@@ -910,7 +1229,6 @@ final class WeatherWindField {
             allocation.put(bestRole, allocation.getOrDefault(bestRole, 0) + 1);
             remaining--;
         }
-
         final List<ProfileFace> selected = new ArrayList<>(selectedCount);
         for (final int role : roles) {
             final List<ProfileFace> roleFaces = byRole.get(role);
@@ -922,7 +1240,6 @@ final class WeatherWindField {
         }
         return normalizeProfileWeights(selected);
     }
-
     private static List<ProfileFace> normalizeProfileWeights(final List<ProfileFace> samples) {
         if (samples.isEmpty()) {
             return List.of();
@@ -939,7 +1256,6 @@ final class WeatherWindField {
         }
         return List.copyOf(normalized);
     }
-
     private static List<ProfileFace> aggregateRolePatches(final List<ProfileFace> roleFaces, final int targetCount) {
         if (roleFaces.isEmpty() || targetCount <= 0) {
             return List.of();
@@ -947,13 +1263,11 @@ final class WeatherWindField {
         if (targetCount >= roleFaces.size()) {
             return roleFaces;
         }
-
         final List<ProfileFace> sorted = new ArrayList<>(roleFaces);
         sorted.sort(Comparator
                 .comparingDouble((ProfileFace face) -> primarySort(face, roleForNormal(face.normal())))
                 .thenComparingDouble(face -> secondarySort(face, roleForNormal(face.normal())))
                 .thenComparingDouble(face -> tertiarySort(face, roleForNormal(face.normal()))));
-
         final List<ProfileFace> aggregated = new ArrayList<>(targetCount);
         for (int i = 0; i < targetCount; i++) {
             final int start = (int) Math.floor(i * sorted.size() / (double) targetCount);
@@ -962,7 +1276,6 @@ final class WeatherWindField {
         }
         return aggregated;
     }
-
     private static ProfileFace aggregatePatchGroup(final List<ProfileFace> group) {
         double totalArea = 0.0D;
         double x = 0.0D;
@@ -981,7 +1294,6 @@ final class WeatherWindField {
         }
         return new ProfileFace(new Vec3(x / totalArea, y / totalArea, z / totalArea), normal, totalArea);
     }
-
     private static double primarySort(final ProfileFace face, final int role) {
         return switch (role) {
             case ROLE_WEST, ROLE_EAST -> face.point().z;
@@ -990,7 +1302,6 @@ final class WeatherWindField {
             default -> face.point().x;
         };
     }
-
     private static double secondarySort(final ProfileFace face, final int role) {
         return switch (role) {
             case ROLE_WEST, ROLE_EAST -> face.point().y;
@@ -999,7 +1310,6 @@ final class WeatherWindField {
             default -> face.point().y;
         };
     }
-
     private static double tertiarySort(final ProfileFace face, final int role) {
         return switch (role) {
             case ROLE_WEST, ROLE_EAST -> face.point().x;
@@ -1008,13 +1318,11 @@ final class WeatherWindField {
             default -> face.point().z;
         };
     }
-
     private static boolean[][][] computeOutsideAir(final boolean[][][] solid, final int rx, final int ry, final int rz) {
         final boolean[][][] outside = new boolean[rx + 2][ry + 2][rz + 2];
         final ArrayDeque<int[]> queue = new ArrayDeque<>();
         outside[0][0][0] = true;
         queue.add(new int[] {0, 0, 0});
-
         while (!queue.isEmpty()) {
             final int[] current = queue.removeFirst();
             floodNeighbor(solid, outside, queue, rx, ry, rz, current[0] + 1, current[1], current[2]);
@@ -1024,10 +1332,8 @@ final class WeatherWindField {
             floodNeighbor(solid, outside, queue, rx, ry, rz, current[0], current[1], current[2] + 1);
             floodNeighbor(solid, outside, queue, rx, ry, rz, current[0], current[1], current[2] - 1);
         }
-
         return outside;
     }
-
     private static void floodNeighbor(final boolean[][][] solid, final boolean[][][] outside,
                                       final ArrayDeque<int[]> queue,
                                       final int rx, final int ry, final int rz,
@@ -1041,7 +1347,6 @@ final class WeatherWindField {
         outside[x][y][z] = true;
         queue.add(new int[] {x, y, z});
     }
-
     private static boolean isOutsideAir(final boolean[][][] outside, final int x, final int y, final int z) {
         return x >= 0 && y >= 0 && z >= 0
                 && x < outside.length
@@ -1049,7 +1354,6 @@ final class WeatherWindField {
                 && z < outside[x][y].length
                 && outside[x][y][z];
     }
-
     private static Vec3 localNormalForRole(final int role) {
         return switch (role) {
             case ROLE_ROOF -> ROOF_NORMAL;
@@ -1061,7 +1365,6 @@ final class WeatherWindField {
             default -> CENTER_NORMAL;
         };
     }
-
     private static int roleForNormal(final Vec3 normal) {
         if (normal == null || normal.lengthSqr() <= 1.0e-12D) {
             return ROLE_CENTER;
@@ -1077,21 +1380,17 @@ final class WeatherWindField {
         }
         return normal.z < 0.0D ? ROLE_NORTH : ROLE_SOUTH;
     }
-
     private static double midpoint(final double min, final double max) {
         return (min + max) * 0.5D;
     }
-
     private static int axisResolution(final int size, final int maxSize, final int maxResolution) {
         final double ratio = size / (double) Math.max(1, maxSize);
         return Math.max(2, Math.min(maxResolution, (int) Math.ceil(maxResolution * ratio)));
     }
-
     private static int cellBlock(final int min, final int size, final int resolution, final int cell, final int max) {
         final double center = min + (cell + 0.5D) * size / (double) resolution;
         return Math.max(min, Math.min(max, (int) Math.floor(center)));
     }
-
     private static boolean isSolidAt(final ServerSubLevel subLevel, final int x, final int y, final int z) {
         try {
             final LevelPlot plot = subLevel.getPlot();
@@ -1100,14 +1399,12 @@ final class WeatherWindField {
             if (chunk == null) {
                 return false;
             }
-
             final BlockState state = chunk.getBlockState(pos);
             return state != null && !state.isAir();
         } catch (final RuntimeException ignored) {
             return false;
         }
     }
-
     private static ProfileBounds getProfileBounds(final ServerSubLevel subLevel) {
         try {
             final Object bounds = subLevel.getPlot().getBoundingBox();
@@ -1135,7 +1432,6 @@ final class WeatherWindField {
             return null;
         }
     }
-
     private static Object getBoundingBox(final ServerSubLevel subLevel) {
         try {
             final Method method = getBoundingBoxMethod(subLevel.getClass());
@@ -1144,12 +1440,10 @@ final class WeatherWindField {
             return null;
         }
     }
-
     private static Method getBoundingBoxMethod(final Class<?> subLevelClass) {
         if (searchedBoundingBoxMethod) {
             return boundingBoxMethod;
         }
-
         searchedBoundingBoxMethod = true;
         try {
             boundingBoxMethod = subLevelClass.getMethod("boundingBox");
@@ -1158,12 +1452,10 @@ final class WeatherWindField {
         }
         return boundingBoxMethod;
     }
-
     private static boolean cacheBoundsMethods(final Class<?> boundsClass) {
         if (boundsClass == cachedBoundsClass) {
             return minXMethod != null;
         }
-
         try {
             minXMethod = boundsClass.getMethod("minX");
             minYMethod = boundsClass.getMethod("minY");
@@ -1184,7 +1476,6 @@ final class WeatherWindField {
             return false;
         }
     }
-
     private static double invokeDouble(final Method method, final Object target) {
         try {
             final Object raw = method.invoke(target);
@@ -1193,7 +1484,6 @@ final class WeatherWindField {
             return Double.NaN;
         }
     }
-
     private static boolean isUsableBounds(final double minX, final double minY, final double minZ,
                                           final double maxX, final double maxY, final double maxZ) {
         return Double.isFinite(minX)
@@ -1206,13 +1496,11 @@ final class WeatherWindField {
                 && maxY >= minY
                 && maxZ >= minZ;
     }
-
     private static final class ProfileAccumulator {
         double x;
         double y;
         double z;
         double weight;
-
         void add(final double x, final double y, final double z, final double weight) {
             if (!Double.isFinite(weight) || weight <= 0.0D) {
                 return;
@@ -1222,7 +1510,6 @@ final class WeatherWindField {
             this.z += z * weight;
             this.weight += weight;
         }
-
         Vec3 average() {
             if (this.weight <= 0.0D) {
                 return Vec3.ZERO;
@@ -1230,16 +1517,12 @@ final class WeatherWindField {
             return new Vec3(this.x / this.weight, this.y / this.weight, this.z / this.weight);
         }
     }
-
     private record ProfileBounds(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
     }
-
     private record ProfileFace(Vec3 point, Vec3 normal, double weight) {
     }
-
     private record SurfacePlaneKey(int role, int plane, int minA, int minB) {
     }
-
     private record AerodynamicProfile(ProfileFace west, ProfileFace east, ProfileFace north, ProfileFace south,
                                       ProfileFace roof, ProfileFace bottom, List<ProfileFace> samples) {
         static final AerodynamicProfile EMPTY = new AerodynamicProfile(
@@ -1251,11 +1534,9 @@ final class WeatherWindField {
                 new ProfileFace(Vec3.ZERO, BOTTOM_NORMAL, 1.0D),
                 List.of()
         );
-
         List<ProfileFace> selectedSamples(final int requestedSamples) {
             return selectProfileSamples(this.samples, requestedSamples);
         }
-
         Vec3 worldPoint(final int role, final Vec3 fallback, final Pose3d pose) {
             final ProfileFace face = face(role);
             if (face.point() == Vec3.ZERO || face.point().lengthSqr() <= 1.0e-12D) {
@@ -1265,7 +1546,6 @@ final class WeatherWindField {
             pose.transformPosition(PROFILE_WORLD_POINT, PROFILE_WORLD_POINT);
             return new Vec3(PROFILE_WORLD_POINT.x, PROFILE_WORLD_POINT.y, PROFILE_WORLD_POINT.z);
         }
-
         Vec3 worldNormal(final int role, final Vec3 fallback, final Pose3d pose) {
             final ProfileFace face = face(role);
             if (face.normal() == Vec3.ZERO || face.normal().lengthSqr() <= 1.0e-12D) {
@@ -1279,11 +1559,9 @@ final class WeatherWindField {
             PROFILE_WORLD_NORMAL.normalize();
             return new Vec3(PROFILE_WORLD_NORMAL.x, PROFILE_WORLD_NORMAL.y, PROFILE_WORLD_NORMAL.z);
         }
-
         double weight(final int role) {
             return Math.max(0.0D, Math.min(1.0D, face(role).weight()));
         }
-
         private ProfileFace face(final int role) {
             return switch (role) {
                 case ROLE_WEST -> this.west;
@@ -1296,18 +1574,174 @@ final class WeatherWindField {
             };
         }
     }
+    static final class PreparedWindFrame {
+        private final ServerSubLevel subLevel;
+        @Nullable
+        private final Vec3 centerPosition;
+        private final List<PreparedSurfaceSample> preparedSurfaces;
+        private final List<PhysicsTickWindBatch.PendingRequest> providerRequests;
+        private final List<BatchWindRequest> requests;
+        private List<WeatherWindSampler.WindSample> bodySamples = List.of();
+
+        PreparedWindFrame(final ServerSubLevel subLevel,
+                          @Nullable final Vec3 centerPosition,
+                          final List<PreparedSurfaceSample> preparedSurfaces,
+                          final List<PhysicsTickWindBatch.PendingRequest> providerRequests,
+                          final List<BatchWindRequest> requests) {
+            this.subLevel = subLevel;
+            this.centerPosition = centerPosition;
+            this.preparedSurfaces = List.copyOf(preparedSurfaces);
+            this.providerRequests = List.copyOf(providerRequests);
+            this.requests = List.copyOf(requests);
+        }
+
+        ServerSubLevel subLevel() {
+            return this.subLevel;
+        }
+
+        List<BatchWindRequest> requests() {
+            return this.requests;
+        }
+
+        List<WeatherWindSampler.WindSample> bodySamples() {
+            return this.bodySamples;
+        }
+
+        void acceptResolved(final List<Vec3> resolved) {
+            final int expected = this.requests.size();
+            if (resolved.size() != expected) {
+                throw new IllegalArgumentException("Resolved wind count " + resolved.size() + " did not match prepared request count " + expected);
+            }
+
+            final int bodyOffset;
+            if (this.centerPosition == null) {
+                this.bodySamples = List.of();
+                bodyOffset = 0;
+            } else {
+                final List<WeatherWindSampler.WindSample> samples = new ArrayList<>(1 + this.preparedSurfaces.size());
+                final Vec3 centerWind = resolved.isEmpty() ? Vec3.ZERO : resolved.get(0);
+                samples.add(new WeatherWindSampler.WindSample(
+                        this.centerPosition,
+                        this.centerPosition,
+                        CENTER_NORMAL,
+                        centerWind,
+                        1.0D,
+                        ROLE_CENTER,
+                        this.centerPosition
+                ));
+                for (int i = 0; i < this.preparedSurfaces.size(); i++) {
+                    final PreparedSurfaceSample surface = this.preparedSurfaces.get(i);
+                    final Vec3 wind = resolved.get(1 + i);
+                    samples.add(new WeatherWindSampler.WindSample(
+                            surface.samplePosition(),
+                            surface.applicationPosition(),
+                            surface.outwardNormal(),
+                            wind,
+                            surface.areaWeight(),
+                            surface.surfaceRole(),
+                            surface.pressureCenterPosition()
+                    ));
+                }
+                this.bodySamples = List.copyOf(samples);
+                bodyOffset = 1 + this.preparedSurfaces.size();
+            }
+
+            final List<Vec3> providerWinds = this.providerRequests.isEmpty()
+                    ? List.of()
+                    : new ArrayList<>(resolved.subList(bodyOffset, bodyOffset + this.providerRequests.size()));
+            PhysicsTickWindBatch.publishProviderWinds(this.subLevel, this.providerRequests, providerWinds);
+        }
+    }
+
+    private record PreparedSurfaceSample(Vec3 samplePosition,
+                                                 Vec3 applicationPosition,
+                                                 Vec3 outwardNormal,
+                                                 int cacheRole,
+                                                 double areaWeight,
+                                                 int surfaceRole,
+                                                 Vec3 pressureCenterPosition) {
+    }
+
+    private record BatchWindRequest(Vec3 samplePosition, WindUse use, int cacheRole, int intervalTicks) {
+    }
+
+    private record ScopedBatchWindRequest(ServerSubLevel subLevel, BatchWindRequest request) {
+    }
+
+    private record RawWindPositionKey(ServerLevel level, long x, long y, long z) {
+        static RawWindPositionKey of(final ServerLevel level, final Vec3 position) {
+            return new RawWindPositionKey(
+                    level,
+                    Math.round(position.x * 1_000_000.0D),
+                    Math.round(position.y * 1_000_000.0D),
+                    Math.round(position.z * 1_000_000.0D)
+            );
+        }
+    }
+
+    private record PendingBatchEntry(int resultIndex,
+                                     BatchWindRequest request,
+                                     WindCacheKey cacheKey,
+                                     CachedWind previous) {
+    }
+
+    private record PendingBatchGroup(ServerLevel level, Vec3 samplePosition, List<PendingBatchEntry> entries) {
+    }
+
+
+    private record RawWindBatchContext(List<Storm> storms, Map<Long, Integer> terrainHeights) {
+        int terrainHeight(final ServerLevel level, final Vec3 samplePosition) {
+            final BlockPos blockPos = BlockPos.containing(samplePosition);
+            final long columnKey = ((long) blockPos.getX() << 32) ^ (blockPos.getZ() & 0xffffffffL);
+            final Integer cached = terrainHeights.get(columnKey);
+            if (cached != null) {
+                AeronauticsProfilerMetrics.recordTerrainCache(true);
+                return cached;
+            }
+            final int terrainY = level.getHeightmapPos(
+                    Heightmap.Types.MOTION_BLOCKING,
+                    blockPos
+            ).getY();
+            terrainHeights.put(columnKey, terrainY);
+            AeronauticsProfilerMetrics.recordTerrainCache(false);
+            return terrainY;
+        }
+
+        static RawWindBatchContext capture(final ServerLevel level) {
+            final long tick = level.getGameTime();
+            final CachedRawWindBatchContext cached = RAW_BATCH_CONTEXT_CACHE.get(level);
+            if (cached != null && cached.tick() == tick) {
+                return cached.context();
+            }
+            final List<Storm> storms;
+            if (!Config.enableTornadoSuction()) {
+                storms = List.of();
+            } else {
+                final WeatherHandler handler = GameBusEvents.MANAGERS.get(level.dimension());
+                storms = handler == null || handler.getStorms() == null || handler.getStorms().isEmpty()
+                        ? List.of()
+                        : new ArrayList<>(handler.getStorms());
+            }
+            final RawWindBatchContext context = new RawWindBatchContext(storms, new HashMap<>());
+            RAW_BATCH_CONTEXT_CACHE.put(level, new CachedRawWindBatchContext(tick, context));
+            if (tick % 200L == 0L) {
+                RAW_BATCH_CONTEXT_CACHE.entrySet().removeIf(entry -> tick - entry.getValue().tick() > 20L);
+            }
+            return context;
+        }
+    }
+
+    private record CachedRawWindBatchContext(long tick, RawWindBatchContext context) {
+    }
 
     private enum WindUse {
         BODY,
         AIRFLOW
     }
-
     private record WindCacheKey(String subLevelId, WindUse use, int role) {
     }
-
     private record CachedAerodynamicProfile(ProfileBounds bounds, AerodynamicProfile profile, long tick) {
     }
-
     private record CachedWind(Vec3 previousWind, Vec3 targetWind, long tick, int intervalTicks) {
         Vec3 wind(final long currentTick) {
             if (intervalTicks <= 1) {
@@ -1316,7 +1750,6 @@ final class WeatherWindField {
             if (currentTick <= tick) {
                 return previousWind;
             }
-
             final double rawAlpha = (currentTick - tick) / (double) intervalTicks;
             final double alpha = Math.max(0.0D, Math.min(1.0D, rawAlpha));
             final double smoothAlpha = alpha * alpha * (3.0D - 2.0D * alpha);
@@ -1327,5 +1760,4 @@ final class WeatherWindField {
             );
         }
     }
-
 }

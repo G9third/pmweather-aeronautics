@@ -24,6 +24,7 @@ public final class WeatherAirflow {
      * Create Aeronautics Lift Patch, which made the former interface injection incompatible.
      */
     public static Vector3dc airRelativeLinearVelocity(
+            final BlockSubLevelLiftProvider provider,
             final BlockSubLevelLiftProvider.LiftProviderContext ctx,
             final ServerSubLevel subLevel,
             @Nullable final Pose3d localPose,
@@ -53,7 +54,22 @@ public final class WeatherAirflow {
                 scratch.worldSample.y,
                 scratch.worldSample.z
         );
-        final Vec3 sampledWind = WeatherWindSampler.sampleLocalAirflowWindCached(subLevel, samplePos);
+        Vec3 sampledWind = PhysicsTickWindBatch.windForProvider(provider, ctx, subLevel, localPose, samplePos);
+        if (sampledWind == null) {
+            PhysicsTickWindBatch.ensureResolved(subLevel);
+            sampledWind = PhysicsTickWindBatch.windForProvider(provider, ctx, subLevel, localPose, samplePos);
+        }
+        if (sampledWind == null) {
+            // If this provider was part of the current frame but the hard budget could not assign its
+            // component a fresh probe, do not bypass the budget with a surprise per-provider query.
+            // A zero wind fallback matches the existing hard-budget behavior for uncached fresh
+            // samples. Only genuinely uncollected third-party invocation paths use the compatibility
+            // single-position sampler.
+            sampledWind = PhysicsTickWindBatch.wasCollectedProvider(provider, ctx, subLevel, localPose, samplePos)
+                    || PhysicsTickWindBatch.isBalloonProvider(provider, ctx)
+                    ? Vec3.ZERO
+                    : WeatherWindSampler.sampleLocalAirflowWindCached(subLevel, samplePos);
+        }
 
         // Cached airflow wind remains in PMWeather/mph-style units so thresholds stay readable.
         if (sampledWind.length() <= Config.windThreshold()) {
