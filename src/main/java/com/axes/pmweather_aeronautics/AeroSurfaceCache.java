@@ -124,16 +124,13 @@ public final class AeroSurfaceCache {
                     .add(face.point().x, face.point().y, face.point().z, Math.max(0.0D, face.weight()));
         }
 
-        final double maxArea = Math.max(1.0D, Math.max(Math.max(west.weight, east.weight),
-                Math.max(Math.max(north.weight, south.weight), Math.max(roof.weight, bottom.weight))));
-
         return new AerodynamicProfile(
-                profileFace(west, maxArea, ROLE_WEST, new Vec3(bounds.minX(), midpoint(bounds.minY(), bounds.maxY() + 1.0D), midpoint(bounds.minZ(), bounds.maxZ() + 1.0D))),
-                profileFace(east, maxArea, ROLE_EAST, new Vec3(bounds.maxX() + 1.0D, midpoint(bounds.minY(), bounds.maxY() + 1.0D), midpoint(bounds.minZ(), bounds.maxZ() + 1.0D))),
-                profileFace(north, maxArea, ROLE_NORTH, new Vec3(midpoint(bounds.minX(), bounds.maxX() + 1.0D), midpoint(bounds.minY(), bounds.maxY() + 1.0D), bounds.minZ())),
-                profileFace(south, maxArea, ROLE_SOUTH, new Vec3(midpoint(bounds.minX(), bounds.maxX() + 1.0D), midpoint(bounds.minY(), bounds.maxY() + 1.0D), bounds.maxZ() + 1.0D)),
-                profileFace(roof, maxArea, ROLE_ROOF, new Vec3(midpoint(bounds.minX(), bounds.maxX() + 1.0D), bounds.maxY() + 1.0D, midpoint(bounds.minZ(), bounds.maxZ() + 1.0D))),
-                profileFace(bottom, maxArea, ROLE_BOTTOM, new Vec3(midpoint(bounds.minX(), bounds.maxX() + 1.0D), bounds.minY(), midpoint(bounds.minZ(), bounds.maxZ() + 1.0D))),
+                profileFace(west, ROLE_WEST, new Vec3(bounds.minX(), midpoint(bounds.minY(), bounds.maxY() + 1.0D), midpoint(bounds.minZ(), bounds.maxZ() + 1.0D))),
+                profileFace(east, ROLE_EAST, new Vec3(bounds.maxX() + 1.0D, midpoint(bounds.minY(), bounds.maxY() + 1.0D), midpoint(bounds.minZ(), bounds.maxZ() + 1.0D))),
+                profileFace(north, ROLE_NORTH, new Vec3(midpoint(bounds.minX(), bounds.maxX() + 1.0D), midpoint(bounds.minY(), bounds.maxY() + 1.0D), bounds.minZ())),
+                profileFace(south, ROLE_SOUTH, new Vec3(midpoint(bounds.minX(), bounds.maxX() + 1.0D), midpoint(bounds.minY(), bounds.maxY() + 1.0D), bounds.maxZ() + 1.0D)),
+                profileFace(roof, ROLE_ROOF, new Vec3(midpoint(bounds.minX(), bounds.maxX() + 1.0D), bounds.maxY() + 1.0D, midpoint(bounds.minZ(), bounds.maxZ() + 1.0D))),
+                profileFace(bottom, ROLE_BOTTOM, new Vec3(midpoint(bounds.minX(), bounds.maxX() + 1.0D), bounds.minY(), midpoint(bounds.minZ(), bounds.maxZ() + 1.0D))),
                 cachedPatches,
                 revision,
                 solidCells.fingerprint(),
@@ -421,7 +418,7 @@ public final class AeroSurfaceCache {
     }
 
     private static ProfileFace profileFace(final ProfileAccumulator accumulator,
-                                           final double maxArea, final int role, final Vec3 fallbackLocalPoint) {
+                                           final int role, final Vec3 fallbackLocalPoint) {
         final Vec3 localPoint = accumulator.weight > 0.0D ? accumulator.average() : fallbackLocalPoint;
         final Vec3 localNormal = localNormalForRole(role);
         final double weight = accumulator.weight <= 0.0D ? 0.0D : accumulator.weight;
@@ -741,20 +738,6 @@ public final class AeroSurfaceCache {
             PROFILE_WORLD_POINT.set(face.point().x, face.point().y, face.point().z);
             pose.transformPosition(PROFILE_WORLD_POINT, PROFILE_WORLD_POINT);
             return new Vec3(PROFILE_WORLD_POINT.x, PROFILE_WORLD_POINT.y, PROFILE_WORLD_POINT.z);
-        }
-
-        Vec3 worldNormal(final int role, final Vec3 fallback, final Pose3d pose) {
-            final ProfileFace face = face(role);
-            if (face.normal() == Vec3.ZERO || face.normal().lengthSqr() <= 1.0e-12D) {
-                return fallback;
-            }
-            PROFILE_WORLD_NORMAL.set(face.normal().x, face.normal().y, face.normal().z);
-            pose.transformNormal(PROFILE_WORLD_NORMAL);
-            if (PROFILE_WORLD_NORMAL.lengthSquared() <= 1.0e-12D) {
-                return fallback;
-            }
-            PROFILE_WORLD_NORMAL.normalize();
-            return new Vec3(PROFILE_WORLD_NORMAL.x, PROFILE_WORLD_NORMAL.y, PROFILE_WORLD_NORMAL.z);
         }
 
         private ProfileFace face(final int role) {

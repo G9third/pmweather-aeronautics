@@ -18,6 +18,7 @@ public final class PMWeatherAeronautics {
     public static final Logger LOGGER = LogUtils.getLogger();
     public PMWeatherAeronautics(final IEventBus modBus, final ModContainer modContainer) {
         PMWeatherForceGroups.register(modBus);
+        migrateAdaptiveBatchConfigTo090bIfNeeded();
         backupOutdatedCommonConfigIfNeeded();
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
         // Sable fires this once for each physics sub-step, which is the right time to add impulses.
@@ -25,6 +26,43 @@ public final class PMWeatherAeronautics {
         NeoForge.EVENT_BUS.addListener(DebugWindCommand::register);
         NeoForge.EVENT_BUS.addListener(DebugWindCommand::onServerTick);
     }
+    private static void migrateAdaptiveBatchConfigTo090bIfNeeded() {
+        final Path configFile = FMLPaths.CONFIGDIR.get().resolve(MODID + "-common.toml");
+        if (!Files.isRegularFile(configFile)) {
+            return;
+        }
+        final String contents;
+        try {
+            contents = Files.readString(configFile);
+        } catch (final IOException exception) {
+            LOGGER.warn("Could not read PMWeather Aeronautics config for 0.9.0b migration check: {}", configFile, exception);
+            return;
+        }
+        if (!contents.contains("PMWeather Aeronautics config schema: 0.8.2b adaptive-airflow-batch")) {
+            return;
+        }
+
+        String migrated = contents.replace(
+                "PMWeather Aeronautics config schema: 0.8.2b adaptive-airflow-batch",
+                "PMWeather Aeronautics config schema: 0.9.0b cleanup-2tick"
+        );
+        // 1 was the old generated default. 0.9.0b intentionally promotes the default to 2 ticks,
+        // matching airflow. This one-time schema migration changes only that old default value.
+        migrated = migrated.replaceAll(
+                "(?m)^([ \\t]*)bodyWindSampleIntervalTicks[ \\t]*=[ \\t]*1[ \\t]*$",
+                "$1bodyWindSampleIntervalTicks = 2"
+        );
+        // These two settings belonged to compatibility/fallback paths that are no longer present.
+        migrated = migrated.replaceAll("(?m)^[ \\t]*maxFallbackSurfaceWindSamples[ \\t]*=.*(?:\\R|$)", "");
+        migrated = migrated.replaceAll("(?m)^[ \\t]*enableEdgeWindSampling[ \\t]*=.*(?:\\R|$)", "");
+        try {
+            Files.writeString(configFile, migrated);
+            LOGGER.info("PMWeather Aeronautics 0.9.0b migrated the adaptive config in place: body and airflow now both default to 2-tick refresh, and obsolete fallback settings were removed.");
+        } catch (final IOException exception) {
+            LOGGER.warn("Could not migrate PMWeather Aeronautics config to 0.9.0b. Existing settings will be left untouched: {}", configFile, exception);
+        }
+    }
+
     private static void backupOutdatedCommonConfigIfNeeded() {
         final Path configFile = FMLPaths.CONFIGDIR.get().resolve(MODID + "-common.toml");
         if (!Files.isRegularFile(configFile)) {
@@ -34,7 +72,7 @@ public final class PMWeatherAeronautics {
         try {
             contents = Files.readString(configFile);
         } catch (final IOException exception) {
-            LOGGER.warn("Could not read PMWeather Aeronautics config for 0.9.0 adaptive-airflow-batch reset check: {}", configFile, exception);
+            LOGGER.warn("Could not read PMWeather Aeronautics config for 0.9.0b cleanup reset check: {}", configFile, exception);
             return;
         }
         if (!looksLikePreRealisticWindConfig(contents)) {
@@ -44,13 +82,14 @@ public final class PMWeatherAeronautics {
         final Path backupFile = nextConfigResetBackupPath(configFile);
         try {
             Files.move(configFile, backupFile, StandardCopyOption.REPLACE_EXISTING);
-            LOGGER.info("PMWeather Aeronautics 0.9.0 moved an older config to {}. A fresh adaptive airflow-region and shared wind-budget config will be generated.", backupFile.getFileName());
+            LOGGER.info("PMWeather Aeronautics 0.9.0b moved an older config to {}. A fresh adaptive airflow-region and shared wind-budget config will be generated.", backupFile.getFileName());
         } catch (final IOException exception) {
-            LOGGER.warn("Could not move old PMWeather Aeronautics config to {}. Delete {} manually if the 0.9.0 config does not regenerate cleanly.", backupFile, configFile, exception);
+            LOGGER.warn("Could not move old PMWeather Aeronautics config to {}. Delete {} manually if the 0.9.0b config does not regenerate cleanly.", backupFile, configFile, exception);
         }
     }
     private static boolean looksLikePreRealisticWindConfig(final String contents) {
-        if (contents.contains("PMWeather Aeronautics config schema: 0.8.2b adaptive-airflow-batch")) {
+        if (contents.contains("PMWeather Aeronautics config schema: 0.9.0b cleanup-2tick")
+                || contents.contains("PMWeather Aeronautics config schema: 0.8.2b adaptive-airflow-batch")) {
             return false;
         }
         if (contents.contains("PMWeather Aeronautics config schema: 0.8.2a native-tornado-vector")) {

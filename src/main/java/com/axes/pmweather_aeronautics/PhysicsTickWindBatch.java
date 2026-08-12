@@ -22,7 +22,6 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -35,8 +34,7 @@ import java.util.Set;
  *
  * The regionizer is generic. It uses connected lift-provider components and block-state/provider
  * signatures rather than aircraft names, so wings, control surfaces and third-party lift blocks can
- * all reduce redundant PMWeather queries. Balloon/envelope providers use the same adaptive budget
- * but probe just outside the object's bounds rather than inside the envelope.
+ * all reduce redundant PMWeather queries.
  */
 final class PhysicsTickWindBatch {
     private static final Direction[] DIRECTIONS = Direction.values();
@@ -45,7 +43,6 @@ final class PhysicsTickWindBatch {
     private static long activeTick = Long.MIN_VALUE;
     private static int previousTickActiveSubLevels = 1;
     private static long lastPruneTick = Long.MIN_VALUE;
-    private static final double BALLOON_PROBE_MARGIN = 0.75D;
 
     private PhysicsTickWindBatch() {
     }
@@ -64,7 +61,6 @@ final class PhysicsTickWindBatch {
             return;
         }
 
-        final long collectionStarted = AeronauticsProfilerMetrics.timerStart();
         final FrameState frame = new FrameState(tick);
         if (Config.enableAirflowLift()) {
             int sourceId = 0;
@@ -77,21 +73,15 @@ final class PhysicsTickWindBatch {
                 }
             }
             frame.components.addAll(buildComponents(frame.providerNodes));
-            AeronauticsProfilerMetrics.addAirflowComponents(frame.components.size());
         }
         FRAMES.put(subLevelKey, frame);
         prune(tick);
-        AeronauticsProfilerMetrics.recordCollectionTime(collectionStarted);
     }
 
-    /**
-     * Plans a fair body/airflow split for this sub-level. The returned body count is exterior body
-     * patches only; the caller may additionally use its center fallback probe.
-     */
+    /** Plans a fair body/airflow split for this sub-level. */
     static Plan plan(final ServerSubLevel subLevel,
                      final int desiredBodyExterior,
-                     final int minimumBodyExterior,
-                     final boolean reserveBodyCenter) {
+                     final int minimumBodyExterior) {
         final FrameState frame = currentFrame(subLevel);
         if (frame == null) {
             return new Plan(Math.max(0, desiredBodyExterior), List.of());
@@ -100,9 +90,8 @@ final class PhysicsTickWindBatch {
             return new Plan(frame.bodyExteriorTarget, List.copyOf(frame.requests.values()));
         }
 
-        final int desiredBody = Math.max(0, desiredBodyExterior) + (reserveBodyCenter ? 1 : 0);
-        final int minimumBody = Math.min(desiredBody,
-                Math.max(0, minimumBodyExterior) + (reserveBodyCenter ? 1 : 0));
+        final int desiredBody = Math.max(0, desiredBodyExterior);
+        final int minimumBody = Math.min(desiredBody, Math.max(0, minimumBodyExterior));
 
         final int providerCount = frame.providerNodes.size();
         final int componentCount = frame.components.size();
@@ -144,28 +133,25 @@ final class PhysicsTickWindBatch {
                 minimumAirflow
         );
 
-        int bodyExteriorTarget = Math.max(0, allocation.body() - (reserveBodyCenter ? 1 : 0));
+        int bodyExteriorTarget = Math.max(0, allocation.body());
         if (bodyExteriorTarget > minimumBodyExterior && (bodyExteriorTarget & 1) != 0) {
             bodyExteriorTarget--;
         }
         frame.bodyExteriorTarget = Math.min(Math.max(0, desiredBodyExterior), bodyExteriorTarget);
 
         final int airflowTarget = Math.min(desiredAirflow, Math.max(0, allocation.airflow()));
-        buildAdaptiveProviderRequests(frame, subLevel, airflowTarget);
-        AeronauticsProfilerMetrics.recordAllocation(
-                desiredBodyExterior,
-                frame.bodyExteriorTarget,
-                providerCount,
-                desiredAirflow,
-                airflowTarget
-        );
+        buildAdaptiveProviderRequests(frame, airflowTarget);
         frame.planned = true;
 
         return new Plan(frame.bodyExteriorTarget, List.copyOf(frame.requests.values()));
     }
 
     static Plan planProviderOnly(final ServerSubLevel subLevel) {
-        return plan(subLevel, 0, 0, false);
+        return plan(subLevel, 0, 0);
+    }
+
+    static int activeSubLevelCount() {
+        return ACTIVE_SUBLEVELS_THIS_TICK.size();
     }
 
     static void publishProviderWinds(final ServerSubLevel subLevel,
@@ -194,7 +180,6 @@ final class PhysicsTickWindBatch {
             frame.resolved = true;
             return;
         }
-        AeronauticsProfilerMetrics.recordProviderOnlyBatch();
         final List<Vec3> winds = WeatherWindField.samplePendingProviderWindBatch(subLevel, plan.providerRequests());
         publishProviderWinds(subLevel, plan.providerRequests(), winds);
     }
@@ -267,11 +252,6 @@ final class PhysicsTickWindBatch {
                 || (frame.planned && !frame.providerNodes.isEmpty()));
     }
 
-    static boolean isBalloonProvider(final BlockSubLevelLiftProvider provider,
-                                     final BlockSubLevelLiftProvider.LiftProviderContext context) {
-        return isBalloon(provider, context);
-    }
-
     private static void collectSource(final FrameState frame,
                                       final ServerSubLevel subLevel,
                                       @Nullable final Pose3d localPose,
@@ -297,9 +277,8 @@ final class PhysicsTickWindBatch {
             subLevel.logicalPose().transformPosition(world);
             final Vec3 worldPosition = new Vec3(world.x, world.y, world.z);
             final PositionKey worldKey = PositionKey.of(worldPosition);
-            final boolean balloon = isBalloon(provider, context);
-            final String signature = balloon ? "balloon" : providerSignature(provider, context);
-            final String lookupSignature = balloon ? "balloon" : providerIdentitySignature(provider, context);
+            final String signature = providerSignature(provider, context);
+            final String lookupSignature = providerIdentitySignature(provider, context);
             final ProviderInvocationKey invocationKey = new ProviderInvocationKey(
                     context.pos().asLong(),
                     lookupSignature
@@ -316,13 +295,9 @@ final class PhysicsTickWindBatch {
                     worldPosition,
                     worldKey,
                     invocationKey,
-                    balloon,
                     signature,
                     lookupSignature
             ));
-            if (!balloon) {
-                AeronauticsProfilerMetrics.addNonBalloonProvider();
-            }
         }
     }
 
@@ -333,7 +308,7 @@ final class PhysicsTickWindBatch {
         final Map<ComponentKey, Map<BlockPos, ProviderNode>> groups = new LinkedHashMap<>();
         for (final ProviderNode node : nodes) {
             groups.computeIfAbsent(
-                    new ComponentKey(node.sourceId(), node.balloon(), node.signature()),
+                    new ComponentKey(node.sourceId(), node.signature()),
                     ignored -> new HashMap<>()
             ).put(node.sourcePosition(), node);
         }
@@ -452,7 +427,6 @@ final class PhysicsTickWindBatch {
     }
 
     private static void buildAdaptiveProviderRequests(final FrameState frame,
-                                                      final ServerSubLevel subLevel,
                                                       final int target) {
         frame.requests.clear();
         frame.providerRequestIdsByContext.clear();
@@ -478,18 +452,8 @@ final class PhysicsTickWindBatch {
             int clusterIndex = 0;
             for (final ProviderCluster cluster : clusters) {
                 final ProviderNode seed = cluster.seed();
-                final Vec3 probePosition;
-                if (component.key().balloon()) {
-                    final Vec3 localProbe = exteriorProbe(cluster.localCentroid(), localBounds(component.nodes()));
-                    final Vector3d world = new Vector3d(localProbe.x, localProbe.y, localProbe.z);
-                    subLevel.logicalPose().transformPosition(world);
-                    probePosition = new Vec3(world.x, world.y, world.z);
-                    AeronauticsProfilerMetrics.addBalloonRegion(cluster.members().size());
-                } else {
-                    probePosition = seed.worldPosition();
-                }
+                final Vec3 probePosition = seed.worldPosition();
 
-                AeronauticsProfilerMetrics.addAirflowRegion(cluster.members().size());
                 final long requestId = frame.nextRequestId++;
                 final int role = stableRegionRole(component, clusterIndex++, seed.sourcePosition(), probePosition);
                 frame.requests.put(requestId, new PendingRequest(requestId, probePosition, role));
@@ -644,79 +608,11 @@ final class PhysicsTickWindBatch {
         return best;
     }
 
-    private static Vec3 exteriorProbe(final Vec3 centroid, final LocalBounds bounds) {
-        final double west = bounds.minX() - BALLOON_PROBE_MARGIN;
-        final double east = bounds.maxX() + 1.0D + BALLOON_PROBE_MARGIN;
-        final double bottom = bounds.minY() - BALLOON_PROBE_MARGIN;
-        final double top = bounds.maxY() + 1.0D + BALLOON_PROBE_MARGIN;
-        final double north = bounds.minZ() - BALLOON_PROBE_MARGIN;
-        final double south = bounds.maxZ() + 1.0D + BALLOON_PROBE_MARGIN;
-        final double x = clamp(centroid.x, bounds.minX() + 0.5D, bounds.maxX() + 0.5D);
-        final double y = clamp(centroid.y, bounds.minY() + 0.5D, bounds.maxY() + 0.5D);
-        final double z = clamp(centroid.z, bounds.minZ() + 0.5D, bounds.maxZ() + 0.5D);
-
-        double bestDistance = Math.abs(x - west);
-        Vec3 best = new Vec3(west, y, z);
-        final double eastDistance = Math.abs(east - x);
-        if (eastDistance < bestDistance) {
-            bestDistance = eastDistance;
-            best = new Vec3(east, y, z);
-        }
-        final double bottomDistance = Math.abs(y - bottom);
-        if (bottomDistance < bestDistance) {
-            bestDistance = bottomDistance;
-            best = new Vec3(x, bottom, z);
-        }
-        final double topDistance = Math.abs(top - y);
-        if (topDistance < bestDistance) {
-            bestDistance = topDistance;
-            best = new Vec3(x, top, z);
-        }
-        final double northDistance = Math.abs(z - north);
-        if (northDistance < bestDistance) {
-            bestDistance = northDistance;
-            best = new Vec3(x, y, north);
-        }
-        final double southDistance = Math.abs(south - z);
-        if (southDistance < bestDistance) {
-            best = new Vec3(x, y, south);
-        }
-        return best;
-    }
-
-    private static LocalBounds localBounds(final List<ProviderNode> nodes) {
-        if (nodes.isEmpty()) {
-            return new LocalBounds(0, 0, 0, 0, 0, 0);
-        }
-        double minX = Double.POSITIVE_INFINITY;
-        double minY = Double.POSITIVE_INFINITY;
-        double minZ = Double.POSITIVE_INFINITY;
-        double maxX = Double.NEGATIVE_INFINITY;
-        double maxY = Double.NEGATIVE_INFINITY;
-        double maxZ = Double.NEGATIVE_INFINITY;
-        for (final ProviderNode node : nodes) {
-            minX = Math.min(minX, node.subLevelLocalCenter().x);
-            minY = Math.min(minY, node.subLevelLocalCenter().y);
-            minZ = Math.min(minZ, node.subLevelLocalCenter().z);
-            maxX = Math.max(maxX, node.subLevelLocalCenter().x);
-            maxY = Math.max(maxY, node.subLevelLocalCenter().y);
-            maxZ = Math.max(maxZ, node.subLevelLocalCenter().z);
-        }
-        return new LocalBounds(
-                (int) Math.floor(minX - 0.5D),
-                (int) Math.floor(minY - 0.5D),
-                (int) Math.floor(minZ - 0.5D),
-                (int) Math.floor(maxX - 0.5D),
-                (int) Math.floor(maxY - 0.5D),
-                (int) Math.floor(maxZ - 0.5D)
-        );
-    }
-
     private static String providerLookupSignature(
             final BlockSubLevelLiftProvider provider,
             final BlockSubLevelLiftProvider.LiftProviderContext context
     ) {
-        return isBalloon(provider, context) ? "balloon" : providerIdentitySignature(provider, context);
+        return providerIdentitySignature(provider, context);
     }
 
     private static ProviderInvocationKey providerInvocationKey(
@@ -766,20 +662,6 @@ final class PhysicsTickWindBatch {
     private static String providerSignature(final BlockSubLevelLiftProvider provider,
                                             final BlockSubLevelLiftProvider.LiftProviderContext context) {
         return providerIdentitySignature(provider, context) + '|' + context.state();
-    }
-
-    private static boolean isBalloon(final BlockSubLevelLiftProvider provider,
-                                     final BlockSubLevelLiftProvider.LiftProviderContext context) {
-        final String className = provider.getClass().getName().toLowerCase(Locale.ROOT);
-        if (containsBalloonWord(className)) {
-            return true;
-        }
-        final ResourceLocation id = BuiltInRegistries.BLOCK.getKey(context.state().getBlock());
-        return id != null && containsBalloonWord(id.getPath().toLowerCase(Locale.ROOT));
-    }
-
-    private static boolean containsBalloonWord(final String value) {
-        return value.contains("balloon") || value.contains("envelope") || value.contains("buoy");
     }
 
     private static int stableRegionRole(final ProviderComponent component,
@@ -838,10 +720,6 @@ final class PhysicsTickWindBatch {
         FRAMES.entrySet().removeIf(entry -> tick - entry.getValue().tick > 20L);
     }
 
-    private static double clamp(final double value, final double min, final double max) {
-        return Math.max(min, Math.min(max, value));
-    }
-
     record PendingRequest(long requestId, Vec3 samplePosition, int cacheRole) {
     }
 
@@ -851,13 +729,10 @@ final class PhysicsTickWindBatch {
     private record Allocation(int body, int airflow) {
     }
 
-    private record ComponentKey(int sourceId, boolean balloon, String signature) {
+    private record ComponentKey(int sourceId, String signature) {
     }
 
     private record RegionKey(int x, int y, int z) {
-    }
-
-    private record LocalBounds(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
     }
 
     private record ProviderInvocationKey(long sourcePosition, String signature) {
@@ -873,7 +748,6 @@ final class PhysicsTickWindBatch {
                                 Vec3 worldPosition,
                                 PositionKey providerKey,
                                 ProviderInvocationKey invocationKey,
-                                boolean balloon,
                                 String signature,
                                 String lookupSignature) {
     }
@@ -882,18 +756,6 @@ final class PhysicsTickWindBatch {
     }
 
     private record ProviderCluster(ProviderNode seed, List<ProviderNode> members) {
-        Vec3 localCentroid() {
-            double x = 0.0D;
-            double y = 0.0D;
-            double z = 0.0D;
-            for (final ProviderNode member : this.members) {
-                x += member.subLevelLocalCenter().x;
-                y += member.subLevelLocalCenter().y;
-                z += member.subLevelLocalCenter().z;
-            }
-            final double count = Math.max(1, this.members.size());
-            return new Vec3(x / count, y / count, z / count);
-        }
     }
 
     private record PositionKey(long x, long y, long z) {

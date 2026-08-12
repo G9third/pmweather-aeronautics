@@ -31,7 +31,7 @@ public final class DebugWindCommand {
         if (server.getTickCount() % 20 != 0) {
             return;
         }
-        final Component message = Component.literal(formatSampleStatsActionBar(WeatherWindSampler.sampleStatsSnapshot()));
+        final Component message = Component.literal(formatSampleStatsActionBar(WeatherWindField.sampleStatsSnapshot()));
         final Iterator<UUID> iterator = LIVE_SAMPLE_MONITORS.iterator();
         while (iterator.hasNext()) {
             final UUID id = iterator.next();
@@ -71,7 +71,7 @@ public final class DebugWindCommand {
         final ServerPlayer player = source.getPlayerOrException();
         final ServerLevel level = player.serverLevel();
         final Vec3 position = player.position();
-        final Vec3 rawWind = WeatherWindSampler.sampleRawWindAt(level, position);
+        final Vec3 rawWind = WeatherWindField.sampleRawWindAt(level, position);
         final double horizontal = horizontalLength(rawWind);
         final double total = rawWind.length();
         final Vec3 physicsWind = WeatherWindField.pmweatherWindToPhysicsWind(rawWind);
@@ -93,7 +93,7 @@ public final class DebugWindCommand {
         return 1;
     }
     private static int showSampleStats(final CommandSourceStack source) {
-        final WeatherWindSampler.SampleStats stats = WeatherWindSampler.sampleStatsSnapshot();
+        final WeatherWindField.SampleStats stats = WeatherWindField.sampleStatsSnapshot();
         source.sendSuccess(() -> Component.literal("PMWeather Aeronautics sample monitor"), false);
         source.sendSuccess(() -> Component.literal(format(
                 "last %.1fs: fresh=%d/s, requested=%d/s, cacheHits=%d/s, budgetFallbacks=%d/s, zeroFallbacks=%d/s",
@@ -102,7 +102,7 @@ public final class DebugWindCommand {
         source.sendSuccess(() -> Component.literal(format(
                 "current tick: fresh=%d/%d, requested=%d, cacheHits=%d, budgetFallbacks=%d, activeObjects=%d",
                 stats.currentFreshQueries(), stats.hardBudget(), stats.currentRequestedSamples(), stats.currentCacheHits(),
-                stats.currentBudgetFallbacks(), stats.activeBodyObjectsThisTick())), false);
+                stats.currentBudgetFallbacks(), stats.activeSubLevelsThisTick())), false);
         source.sendSuccess(() -> Component.literal(format(
                 "smart patch target: last=%d, min=%d, max=%d, perObjectMax=%d, detailFloor=%.1f%%/%d patches",
                 stats.lastSurfaceSampleTarget(), stats.minSurfaceSampleTarget(), stats.maxSurfaceSampleTarget(),
@@ -120,18 +120,18 @@ public final class DebugWindCommand {
         if (enabled) {
             LIVE_SAMPLE_MONITORS.add(player.getUUID());
             source.sendSuccess(() -> Component.literal("PMWeather Aeronautics live sample monitor enabled."), false);
-            player.displayClientMessage(Component.literal(formatSampleStatsActionBar(WeatherWindSampler.sampleStatsSnapshot())), true);
+            player.displayClientMessage(Component.literal(formatSampleStatsActionBar(WeatherWindField.sampleStatsSnapshot())), true);
         } else {
             LIVE_SAMPLE_MONITORS.remove(player.getUUID());
             source.sendSuccess(() -> Component.literal("PMWeather Aeronautics live sample monitor disabled."), false);
         }
         return 1;
     }
-    private static String formatSampleStatsActionBar(final WeatherWindSampler.SampleStats stats) {
+    private static String formatSampleStatsActionBar(final WeatherWindField.SampleStats stats) {
         return format(
                 "PMWA patches: %d/%d fresh/tick | %d/s fresh | %d/s req | %d/s cached | %d/s capped | obj=%d | target=%d",
                 stats.currentFreshQueries(), stats.hardBudget(), stats.rateFreshQueries(), stats.rateRequestedSamples(),
-                stats.rateCacheHits(), stats.rateBudgetFallbacks(), stats.activeBodyObjectsThisTick(),
+                stats.rateCacheHits(), stats.rateBudgetFallbacks(), stats.activeSubLevelsThisTick(),
                 stats.lastSurfaceSampleTarget());
     }
     private static double horizontalLength(final Vec3 vec) {

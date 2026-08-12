@@ -1,5 +1,4 @@
 package com.axes.pmweather_aeronautics;
-import dev.ryanhcode.sable.api.physics.force.ForceGroup;
 import dev.ryanhcode.sable.api.physics.force.ForceTotal;
 import dev.ryanhcode.sable.api.physics.force.QueuedForceGroup;
 import dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle;
@@ -20,7 +19,6 @@ public final class WeatherForceApplier {
     private static final Vector3d WORLD_APPLICATION_POINT = new Vector3d();
     private static final Vector3d LOCAL_APPLICATION_POINT = new Vector3d();
     private static final Vector3d LOCAL_WIND_IMPULSE = new Vector3d();
-    private static final Vector3d CENTER_RELATIVE_WIND = new Vector3d();
     private static final Vector3d SURFACE_WIND = new Vector3d();
     private static final Vector3d PROFILE_SURFACE_WIND = new Vector3d();
     private static final Vector3d NORMAL = new Vector3d();
@@ -32,7 +30,6 @@ public final class WeatherForceApplier {
     private static int lastWindwardSamples;
     private static int lastPressureGroups;
     private static final double BODY_DYNAMIC_PRESSURE_NORMALIZATION = 0.8D;
-    private static final double CENTER_FALLBACK_AREA = 1.0D;
     /**
      * Use PMWeather Aeronautics' registered Sable force group instead of an ad-hoc ForceGroup.
      *
@@ -111,16 +108,12 @@ public final class WeatherForceApplier {
         // requests share the same PMWeather storm snapshot.
         final List<WeatherWindField.PreparedWindFrame> windFrames = new ArrayList<>(activeSubLevels.size());
         for (final ServerSubLevel subLevel : activeSubLevels) {
-            Vec3 bodyCenter = null;
-            if (Config.enableBodyPush()) {
-                final MassData massData = subLevel.getMassTracker();
-                if (massData != null && !massData.isInvalid() && massData.getCenterOfMass() != null) {
-                    final Vector3d center = new Vector3d();
-                    subLevel.logicalPose().transformPosition(massData.getCenterOfMass(), center);
-                    bodyCenter = new Vec3(center.x, center.y, center.z);
-                }
-            }
-            windFrames.add(WeatherWindField.prepareBatchedWindFrame(subLevel, bodyCenter));
+            final MassData massData = subLevel.getMassTracker();
+            final boolean includeBody = Config.enableBodyPush()
+                    && massData != null
+                    && !massData.isInvalid()
+                    && massData.getCenterOfMass() != null;
+            windFrames.add(WeatherWindField.prepareBatchedWindFrame(subLevel, includeBody));
         }
         WeatherWindField.resolvePreparedWindFrames(windFrames);
 
@@ -143,7 +136,7 @@ public final class WeatherForceApplier {
     }
     private static void applyWindToSubLevel(final SubLevelPhysicsSystem physicsSystem, final ServerSubLevel subLevel,
                                             final double timeStep,
-                                            final List<WeatherWindSampler.WindSample> samples) {
+                                            final List<WeatherWindField.WindSample> samples) {
         if (!Config.enableBodyPush()) {
             return;
         }
@@ -154,7 +147,6 @@ public final class WeatherForceApplier {
         final Pose3d pose = subLevel.logicalPose();
         final Vector3dc centerOfMassLocal = massData.getCenterOfMass();
         pose.transformPosition(centerOfMassLocal, WORLD_CENTER);
-        final Vec3 centerPosition = new Vec3(WORLD_CENTER.x, WORLD_CENTER.y, WORLD_CENTER.z);
         if (samples == null || samples.isEmpty()) {
             return;
         }
@@ -173,34 +165,13 @@ public final class WeatherForceApplier {
                 Config.massScaling() * 0.25D
         ));
         final QueuedForceGroup windGroup = subLevel.getOrCreateQueuedForceGroup(PMWeatherForceGroups.weatherWind());
-        // 0.6.0: aerodynamic profile pressure is the main wind force source.
-        // Multiple exterior profile samples are converted through Sable ForceTotal; the center/COM sample is only fallback.
+        // Exterior aerodynamic profile pressure is the only whole-body wind-force source.
+        // There is deliberately no synthetic center/COM fallback query or force.
         final int appliedProfileSamples = applyAerodynamicProfilePressure(
                 subLevel, pose, windGroup, samples, threshold, timeStep, massDamping, massData, centerOfMassLocal
         );
-        int appliedCenter = 0;
-        double centerSpeed = strongestSampleSpeed(subLevel, samples);
-        if (appliedProfileSamples <= 0) {
-            final Vec3 centerWind = samples.get(0).wind();
-            setBodyPressureWind(centerWind, CENTER_RELATIVE_WIND);
-            centerSpeed = CENTER_RELATIVE_WIND.length();
-            if (centerSpeed > threshold) {
-                final double magnitude = aerodynamicPressureMagnitude(centerSpeed, threshold)
-                        * Config.windInfluence()
-                        * Config.aeroPatchPressureStrength()
-                        * effectivePatchArea(CENTER_FALLBACK_AREA)
-                        * BODY_DYNAMIC_PRESSURE_NORMALIZATION
-                        * timeStep
-                        / massDamping;
-                LOCAL_WIND_IMPULSE.set(CENTER_RELATIVE_WIND).normalize().mul(magnitude);
-                capLength(LOCAL_WIND_IMPULSE, Config.maxImpulsePerSubstep());
-                capImpulseByAirRelativeVelocity(LOCAL_WIND_IMPULSE, centerSpeed, massData.getMass());
-                pose.transformNormalInverse(LOCAL_WIND_IMPULSE);
-                pose.transformPositionInverse(WORLD_CENTER, LOCAL_APPLICATION_POINT);
-                windGroup.applyAndRecordPointForce(new Vector3d(LOCAL_APPLICATION_POINT), new Vector3d(LOCAL_WIND_IMPULSE));
-                appliedCenter = 1;
-            }
-        }
+        final int appliedCenter = 0; // Kept in the debug CSV schema for backward compatibility.
+        final double strongestProfileSpeed = strongestSampleSpeed(samples);
         if (WindDebugFile.isEnabled()) {
             WindDebugFile.recordObject(
                     subLevel.getLevel().getGameTime(),
@@ -214,41 +185,30 @@ public final class WeatherForceApplier {
                     samples.size(),
                     appliedProfileSamples,
                     appliedCenter,
-                    centerSpeed,
+                    strongestProfileSpeed,
                     LAST_NET_AERO_FORCE,
                     LAST_NET_AERO_TORQUE,
                     lastWindwardSamples,
                     lastPressureGroups,
-                    WeatherWindSampler.sampleStatsSnapshot()
+                    WeatherWindField.sampleStatsSnapshot()
             );
         }
         if (Config.debugLogging() && subLevel.getLevel().getGameTime() % 100L == 0L) {
             PMWeatherAeronautics.LOGGER.info(
-                    "PMWeather aerodynamic wind for Sable sub-level {}: centerApplied={}, profileApplied={}, strongestProfileSpeed={}, mass={}, damping={}, profileStrength={}, areaWeightStrength={}, patchPerObjectMax={}, quadraticPressure=true, relativeBodyDrag={}",
-                    subLevel.getUniqueId(), appliedCenter, appliedProfileSamples,
-                    centerSpeed, massData.getMass(), massDamping,
+                    "PMWeather aerodynamic wind for Sable sub-level {}: profileApplied={}, strongestProfileSpeed={}, mass={}, damping={}, profileStrength={}, areaWeightStrength={}, patchPerObjectMax={}, quadraticPressure=true, relativeBodyDrag={}",
+                    subLevel.getUniqueId(), appliedProfileSamples,
+                    strongestProfileSpeed, massData.getMass(), massDamping,
                     Config.aeroPatchPressureStrength(), Config.aeroPatchAreaWeightStrength(), Config.maxAeroPatchSamplesPerObject(), Config.enableBodyRelativeWindDrag()
             );
         }
     }
-    private static double strongestSampleSpeed(final ServerSubLevel subLevel,
-                                               final List<WeatherWindSampler.WindSample> samples) {
+    private static double strongestSampleSpeed(final List<WeatherWindField.WindSample> samples) {
         double strongest = 0.0D;
-        for (final WeatherWindSampler.WindSample sample : samples) {
+        for (final WeatherWindField.WindSample sample : samples) {
             final Vec3 wind = sample.wind();
             strongest = Math.max(strongest, WeatherWindField.pmweatherWindToPhysicsWind(wind).length());
         }
         return strongest;
-    }
-    private static Vec3 computeSampleFinalWind(final ServerSubLevel subLevel,
-                                               final WeatherWindSampler.WindSample sample) {
-        return sample.wind();
-    }
-    private static void computeSampleRelativeWind(final ServerSubLevel subLevel,
-                                                  final WeatherWindSampler.WindSample sample,
-                                                  final Vector3d result) {
-        final Vec3 wind = computeSampleFinalWind(subLevel, sample);
-        setBodyPressureWind(wind, result);
     }
     private static void setBodyPressureWind(final Vec3 wind, final Vector3d result) {
         final Vec3 physicsWind = WeatherWindField.pmweatherWindToPhysicsWind(wind);
@@ -273,46 +233,31 @@ public final class WeatherForceApplier {
     private static int applyAerodynamicProfilePressure(final ServerSubLevel subLevel,
                                                        final Pose3d pose,
                                                        final QueuedForceGroup windGroup,
-                                                       final List<WeatherWindSampler.WindSample> samples,
+                                                       final List<WeatherWindField.WindSample> samples,
                                                        final double threshold,
                                                        final double timeStep, final double massDamping,
                                                        final MassData massData,
                                                        final Vector3dc centerOfMassLocal) {
         final double profileStrength = Config.aeroPatchPressureStrength();
-        if (profileStrength <= 0.0D || samples.size() <= 1) {
+        if (profileStrength <= 0.0D || samples.isEmpty()) {
             return 0;
         }
         int windwardSamples = 0;
         final double profileThreshold = Math.max(0.0D, threshold);
-        for (int i = 1; i < samples.size(); i++) {
-            final WeatherWindSampler.WindSample sample = samples.get(i);
-            if (sample.areaWeight() <= 0.0D) {
-                continue;
-            }
-            computeSampleRelativeWind(subLevel, sample, SURFACE_WIND);
-            computeWindwardSurfacePressure(sample, SURFACE_WIND, PROFILE_SURFACE_WIND);
-            if (PROFILE_SURFACE_WIND.length() > profileThreshold) {
-                windwardSamples++;
-            }
-        }
-        lastWindwardSamples = windwardSamples;
-        if (windwardSamples <= 0) {
-            return 0;
-        }
         final ProfilePressureGroup[] groups = new ProfilePressureGroup[8];
         double maxAppliedAirRelativeSpeed = 0.0D;
-        for (int i = 1; i < samples.size(); i++) {
-            final WeatherWindSampler.WindSample sample = samples.get(i);
+        for (int i = 0; i < samples.size(); i++) {
+            final WeatherWindField.WindSample sample = samples.get(i);
             if (sample.areaWeight() <= 0.0D) {
                 continue;
             }
-            final Vec3 finalWind = computeSampleFinalWind(subLevel, sample);
-            setBodyPressureWind(finalWind, SURFACE_WIND);
+            setBodyPressureWind(sample.wind(), SURFACE_WIND);
             computeWindwardSurfacePressure(sample, SURFACE_WIND, PROFILE_SURFACE_WIND);
             final double surfaceSpeed = PROFILE_SURFACE_WIND.length();
             if (surfaceSpeed <= profileThreshold) {
                 continue;
             }
+            windwardSamples++;
             maxAppliedAirRelativeSpeed = Math.max(maxAppliedAirRelativeSpeed, surfaceSpeed);
             final double shareWeight = effectivePatchArea(sample.areaWeight());
             final int groupIndex = pressureGroupIndex(sample.surfaceRole());
@@ -350,7 +295,7 @@ public final class WeatherForceApplier {
                         String.valueOf(subLevel.getUniqueId()),
                         i,
                         sample,
-                        finalWind,
+                        sample.wind(),
                         SURFACE_WIND,
                         PROFILE_SURFACE_WIND,
                         profileThreshold,
@@ -368,6 +313,10 @@ public final class WeatherForceApplier {
                 groups[groupIndex] = group;
             }
             group.add(localApplicationPoint, localPressureCenter, localImpulse, shareWeight);
+        }
+        lastWindwardSamples = windwardSamples;
+        if (windwardSamples <= 0) {
+            return 0;
         }
         int applied = 0;
         final ForceTotal netAeroForce = new ForceTotal();
@@ -489,9 +438,6 @@ public final class WeatherForceApplier {
             return this.entries.size();
         }
     }
-    private static Vector3d pressureLineCenter(final int role, final Vector3dc profileCenter, final Vector3dc centerOfMass) {
-        return SableAeroSolver.pressureLineCenter(role, profileCenter, centerOfMass);
-    }
     /**
      * Converts each exterior PMWeather wind sample into windward surface pressure.
      *
@@ -505,7 +451,7 @@ public final class WeatherForceApplier {
      * was the main path that made small symmetric bodies rapidly flip. Removing that shear is not
      * damping; it prevents the bridge from inventing angular momentum that Sable never asked for.
      */
-    private static void computeWindwardSurfacePressure(final WeatherWindSampler.WindSample sample,
+    private static void computeWindwardSurfacePressure(final WeatherWindField.WindSample sample,
                                                        final Vector3d differentialWind,
                                                        final Vector3d result) {
         final Vec3 outwardNormal = sample.outwardNormal();
@@ -543,14 +489,6 @@ public final class WeatherForceApplier {
                 new Vector3d(forceTotal.getLocalTorque()).mul(scale)
         );
         return capped;
-    }
-    private static void capImpulseByAirRelativeVelocity(final Vector3d impulse,
-                                                        final double airRelativeSpeed,
-                                                        final double mass) {
-        final double maxImpulse = maxAirRelativeImpulse(airRelativeSpeed, mass);
-        if (maxImpulse > 0.0D && Double.isFinite(maxImpulse)) {
-            capLength(impulse, maxImpulse);
-        }
     }
     private static double maxAirRelativeImpulse(final double airRelativeSpeed, final double mass) {
         final double correctionFraction = Config.maxAirRelativeVelocityCorrectionPerSubstep();
