@@ -3,7 +3,6 @@ package com.axes.pmweather_aeronautics;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.Vec3;
-import org.joml.Vector3d;
 import org.joml.Vector3dc;
 
 import java.io.BufferedWriter;
@@ -35,10 +34,6 @@ final class WindDebugFile {
 
     static boolean isEnabled() {
         return enabled;
-    }
-
-    static Path path() {
-        return DEBUG_PATH;
     }
 
     static int start(final CommandSourceStack source) {
@@ -101,7 +96,7 @@ final class WindDebugFile {
                              final Vector3dc netLocalTorque,
                              final int windwardSamples,
                              final int pressureGroups,
-                             final WeatherWindSampler.SampleStats stats) {
+                             final WeatherWindField.SampleStats stats) {
         if (!enabled) {
             return;
         }
@@ -128,7 +123,7 @@ final class WindDebugFile {
                     netLocalForce.x(), netLocalForce.y(), netLocalForce.z(), netLocalForce.length(),
                     netLocalTorque.x(), netLocalTorque.y(), netLocalTorque.z(), netLocalTorque.length(),
                     stats.currentFreshQueries(), stats.hardBudget(), stats.currentRequestedSamples(), stats.currentCacheHits(),
-                    stats.currentBudgetFallbacks(), stats.currentZeroFallbacks(), stats.activeBodyObjectsThisTick(),
+                    stats.currentBudgetFallbacks(), stats.currentZeroFallbacks(), stats.activeSubLevelsThisTick(),
                     stats.lastSurfaceSampleTarget(), stats.minSurfaceSampleTarget(), stats.maxSurfaceSampleTarget(),
                     Config.windInfluence(), Config.aeroPatchPressureStrength(), Config.windThreshold(),
                     Config.maxImpulsePerSubstep(), Config.maxAeroPatchSamplesPerObject(), Config.minAeroPatchCount()
@@ -142,7 +137,7 @@ final class WindDebugFile {
     static void recordSample(final long tick,
                              final String subLevelId,
                              final int sampleIndex,
-                             final WeatherWindSampler.WindSample sample,
+                             final WeatherWindField.WindSample sample,
                              final Vec3 finalWind,
                              final Vector3dc relativeWind,
                              final Vector3dc pressureVectorWorld,

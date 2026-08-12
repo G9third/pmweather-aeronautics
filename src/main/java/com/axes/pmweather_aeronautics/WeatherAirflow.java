@@ -66,9 +66,8 @@ public final class WeatherAirflow {
             // samples. Only genuinely uncollected third-party invocation paths use the compatibility
             // single-position sampler.
             sampledWind = PhysicsTickWindBatch.wasCollectedProvider(provider, ctx, subLevel, localPose, samplePos)
-                    || PhysicsTickWindBatch.isBalloonProvider(provider, ctx)
                     ? Vec3.ZERO
-                    : WeatherWindSampler.sampleLocalAirflowWindCached(subLevel, samplePos);
+                    : WeatherWindField.sampleLocalAirflowWindCached(subLevel, samplePos);
         }
 
         // Cached airflow wind remains in PMWeather/mph-style units so thresholds stay readable.

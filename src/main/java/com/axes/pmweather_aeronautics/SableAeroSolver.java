@@ -1,6 +1,5 @@
 package com.axes.pmweather_aeronautics;
 
-import dev.ryanhcode.sable.api.physics.force.ForceTotal;
 import dev.ryanhcode.sable.api.physics.mass.MassData;
 import org.joml.Vector3d;
 import org.joml.Vector3dc;
@@ -70,20 +69,6 @@ final class SableAeroSolver {
         final Vector3d differentialTorque = rawPointTorque.sub(uniformTorque);
         differentialTorque.mul(Config.differentialPressureTorqueStrength());
         capLength(differentialTorque, Config.maxDifferentialTorqueImpulse());
-        return differentialTorque;
-    }
-
-    static Vector3d applyDifferentialPressureTorque(final ForceTotal forceTotal,
-                                                    final MassData massData,
-                                                    final List<? extends PressureEntry> entries,
-                                                    final Vector3dc pressureLineCenter,
-                                                    final Vector3dc totalImpulse) {
-        final Vector3d differentialTorque = computeDifferentialPressureTorque(
-                massData, entries, pressureLineCenter, totalImpulse
-        );
-        if (differentialTorque.lengthSquared() > 1.0e-12D) {
-            forceTotal.applyLinearAndAngularImpulse(new Vector3d(), differentialTorque);
-        }
         return differentialTorque;
     }
 

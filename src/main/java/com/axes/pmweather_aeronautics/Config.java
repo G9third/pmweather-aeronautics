@@ -3,7 +3,7 @@ import net.neoforged.neoforge.common.ModConfigSpec;
 public final class Config {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
     static {
-        BUILDER.comment("PMWeather Aeronautics config schema: 0.8.2b adaptive-airflow-batch");
+        BUILDER.comment("PMWeather Aeronautics config schema: 0.9.0b cleanup-2tick");
         BUILDER.push("general");
     }
     public static final ModConfigSpec.DoubleValue WIND_THRESHOLD = BUILDER
@@ -31,7 +31,7 @@ public final class Config {
             .translation("pmweather_aeronautics.configuration.airflowWindSampleIntervalTicks")
             .defineInRange("airflowWindSampleIntervalTicks", 2, 1, 200);
     public static final ModConfigSpec.IntValue AIRFLOW_REGION_EDGE_BLOCKS = BUILDER
-            .comment("Target edge length, in lift-provider blocks, for component-local airflow probe regions before the global wind budget applies extra LOD. 1 approaches one probe per provider; 4 groups nearby wing/balloon providers while every provider still keeps its own Sable force calculation.")
+            .comment("Target edge length, in lift-provider blocks, for component-local airflow probe regions before the global wind budget applies extra LOD. 1 approaches one probe per provider; 4 groups nearby compatible lift providers while every provider still keeps its own Sable force calculation.")
             .translation("pmweather_aeronautics.configuration.airflowRegionEdgeBlocks")
             .defineInRange("airflowRegionEdgeBlocks", 4, 1, 32);
     public static final ModConfigSpec.IntValue MAX_AIRFLOW_SAMPLES_PER_OBJECT = BUILDER
@@ -39,11 +39,11 @@ public final class Config {
             .translation("pmweather_aeronautics.configuration.maxAirflowSamplesPerObject")
             .defineInRange("maxAirflowSamplesPerObject", 32, 1, 8192);
     public static final ModConfigSpec.IntValue MIN_AIRFLOW_SAMPLES_PER_COMPONENT = BUILDER
-            .comment("Minimum target probes per connected, orientation/signature-compatible lift-provider component while budget permits. 1 keeps each separate wing/control/balloon component represented before extra detail is allocated.")
+            .comment("Minimum target probes per connected, orientation/signature-compatible lift-provider component while budget permits. 1 keeps each separate lift-provider component represented before extra detail is allocated.")
             .translation("pmweather_aeronautics.configuration.minAirflowSamplesPerComponent")
             .defineInRange("minAirflowSamplesPerComponent", 1, 1, 64);
     public static final ModConfigSpec.DoubleValue MIN_AIRFLOW_SAMPLE_RATIO = BUILDER
-            .comment("Minimum desired airflow-probe ratio relative to discovered lift providers before the global hard budget applies. 0.5 means 10 wing/balloon providers target at least 5 PMWeather probes. This changes atmospheric sampling density only; every provider still performs its own Sable lift/drag calculation.")
+            .comment("Minimum desired airflow-probe ratio relative to discovered lift providers before the global hard budget applies. 0.5 means 10 lift providers target at least 5 PMWeather probes. This changes atmospheric sampling density only; every provider still performs its own Sable lift/drag calculation.")
             .translation("pmweather_aeronautics.configuration.minAirflowSampleRatio")
             .defineInRange("minAirflowSampleRatio", 0.5D, 0.0D, 1.0D);
     static {
@@ -123,23 +123,15 @@ public final class Config {
         BUILDER.push("performance");
     }
     public static final ModConfigSpec.IntValue BODY_WIND_SAMPLE_INTERVAL_TICKS = BUILDER
-            .comment("How often each Sable sub-level asks PMWeather for body-push wind samples, in game ticks. Cached raw wind is reused between samples and Sable physics substeps. 1 = every tick, 5 = four times per second.")
+            .comment("How often each Sable sub-level asks PMWeather for body-push wind samples, in game ticks. Cached raw wind is reused between samples and Sable physics substeps. Default 2 = ten fresh updates per second at 20 TPS.")
             .translation("pmweather_aeronautics.configuration.bodyWindSampleIntervalTicks")
-            .defineInRange("bodyWindSampleIntervalTicks", 1, 1, 200);
+            .defineInRange("bodyWindSampleIntervalTicks", 2, 1, 200);
     public static final ModConfigSpec.IntValue MAX_WIND_SAMPLES_PER_TICK = BUILDER
-            .comment("Global safety budget for fresh PMWeather wind queries per server tick. Body exterior patches and component-local wing/control/balloon airflow probes share this budget, reduce spatial detail fairly, deduplicate exact coordinates, then fall back to cached/zero wind if the hard limit is still reached.")
+            .comment("Global safety budget for fresh PMWeather wind queries per server tick. Body exterior patches and component-local lift-provider airflow probes share this budget, reduce spatial detail fairly, deduplicate exact coordinates, then fall back to cached/zero wind if the hard limit is still reached.")
             .translation("pmweather_aeronautics.configuration.maxWindSamplesPerTick")
             .defineInRange("maxWindSamplesPerTick", 128, 16, 100000);
-    public static final ModConfigSpec.IntValue MAX_FALLBACK_SURFACE_WIND_SAMPLES = BUILDER
-            .comment("Maximum exterior fallback wind samples used by legacy compatibility sampling paths. Main 0.7 body aerodynamics use maxAeroPatchSamplesPerObject instead.")
-            .translation("pmweather_aeronautics.configuration.maxFallbackSurfaceWindSamples")
-            .defineInRange("maxFallbackSurfaceWindSamples", 12, 0, 64);
-    public static final ModConfigSpec.BooleanValue ENABLE_EDGE_WIND_SAMPLING = BUILDER
-            .comment("Enable extra fallback PMWeather samples around the sub-level roof and edges. The main 0.7 path still uses exterior aero patches.")
-            .translation("pmweather_aeronautics.configuration.enableEdgeWindSampling")
-            .define("enableEdgeWindSampling", true);
     public static final ModConfigSpec.DoubleValue EDGE_WIND_SAMPLE_MARGIN = BUILDER
-            .comment("Distance outside the sub-level bounding box used for fallback roof and edge wind samples.")
+            .comment("Distance outside each exposed body face where PMWeather wind is sampled. Increase only if nearby contraption blocks interfere with exterior sampling.")
             .translation("pmweather_aeronautics.configuration.edgeWindSampleMargin")
             .defineInRange("edgeWindSampleMargin", 2.0D, 0.0D, 64.0D);
     static {
@@ -229,16 +221,10 @@ public final class Config {
         return intValue(MAX_CACHED_AERO_PATCHES, 4096);
     }
     public static int bodyWindSampleIntervalTicks() {
-        return intValue(BODY_WIND_SAMPLE_INTERVAL_TICKS, 1);
+        return intValue(BODY_WIND_SAMPLE_INTERVAL_TICKS, 2);
     }
     public static int maxWindSamplesPerTick() {
         return intValue(MAX_WIND_SAMPLES_PER_TICK, 128);
-    }
-    public static int maxFallbackSurfaceWindSamples() {
-        return intValue(MAX_FALLBACK_SURFACE_WIND_SAMPLES, 12);
-    }
-    public static boolean enableEdgeWindSampling() {
-        return booleanValue(ENABLE_EDGE_WIND_SAMPLING, true);
     }
     public static double edgeWindSampleMargin() {
         return doubleValue(EDGE_WIND_SAMPLE_MARGIN, 2.0D);

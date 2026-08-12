@@ -36,8 +36,6 @@
   "pmweather_aeronautics.configuration.maxCachedAeroPatches": "Max Cached Patches",
   "pmweather_aeronautics.configuration.bodyWindSampleIntervalTicks": "Body Wind Refresh Interval",
   "pmweather_aeronautics.configuration.maxWindSamplesPerTick": "Max Wind Samples Per Tick",
-  "pmweather_aeronautics.configuration.maxFallbackSurfaceWindSamples": "Max Fallback Samples",
-  "pmweather_aeronautics.configuration.enableEdgeWindSampling": "Enable Edge Wind Sampling",
   "pmweather_aeronautics.configuration.edgeWindSampleMargin": "Edge Wind Sample Margin",
   "pmweather_aeronautics.configuration.debugLogging": "Debug Logging",
   "force_group.pmweather_aeronautics.weather_wind": "PMWeather Wind",
