@@ -24,11 +24,12 @@ public final class DebugWindCommand {
         registerRoot(dispatcher, "pmaero");
     }
     public static void onServerTick(final ServerTickEvent.Post event) {
-        if (LIVE_SAMPLE_MONITORS.isEmpty()) {
+        if (LIVE_SAMPLE_MONITORS.isEmpty() && !AeroPatchVisualizer.hasViewers()) {
             return;
         }
         final MinecraftServer server = event.getServer();
-        if (server.getTickCount() % 20 != 0) {
+        AeroPatchVisualizer.onServerTick(server);
+        if (LIVE_SAMPLE_MONITORS.isEmpty() || server.getTickCount() % 20 != 0) {
             return;
         }
         final Component message = Component.literal(formatSampleStatsActionBar(WeatherWindField.sampleStatsSnapshot()));
@@ -58,10 +59,22 @@ public final class DebugWindCommand {
                                         .executes(context -> setLiveSampleStats(context.getSource(), false))))
                         .then(Commands.literal("rate")
                                 .executes(context -> showSampleStats(context.getSource()))))
+                .then(Commands.literal("patches")
+                        .executes(context -> showPatchVisualizationStatus(context.getSource()))
+                        .then(Commands.literal("live")
+                                .executes(context -> togglePatchVisualization(context.getSource()))
+                                .then(Commands.literal("on")
+                                        .executes(context -> setPatchVisualization(context.getSource(), true)))
+                                .then(Commands.literal("off")
+                                        .executes(context -> setPatchVisualization(context.getSource(), false)))))
                 .then(Commands.literal("winddebug")
                         .executes(context -> WindDebugFile.status(context.getSource()))
                         .then(Commands.literal("start")
-                                .executes(context -> WindDebugFile.start(context.getSource())))
+                                .executes(context -> WindDebugFile.start(context.getSource()))
+                                .then(Commands.literal("nearby").executes(context -> WindDebugFile.startNearby(context.getSource()))))
+                        .then(Commands.literal("mark")
+                                .then(Commands.argument("label", com.mojang.brigadier.arguments.StringArgumentType.greedyString())
+                                        .executes(context -> WindDebugFile.mark(context.getSource(), com.mojang.brigadier.arguments.StringArgumentType.getString(context, "label")))))
                         .then(Commands.literal("stop")
                                 .executes(context -> WindDebugFile.stop(context.getSource())))
                         .then(Commands.literal("status")
@@ -127,6 +140,34 @@ public final class DebugWindCommand {
         }
         return 1;
     }
+    private static int showPatchVisualizationStatus(final CommandSourceStack source) throws CommandSyntaxException {
+        final ServerPlayer player = source.getPlayerOrException();
+        source.sendSuccess(() -> Component.literal(AeroPatchVisualizer.status(player)), false);
+        source.sendSuccess(() -> Component.literal(
+                "Each color is one selected body-pressure patch; same-color markers show the exposed block faces represented by it, and the larger marker is the patch force/sample center."), false);
+        source.sendSuccess(() -> Component.literal(
+                "toggle: /pmaero patches live  |  /pmaero patches live on  |  /pmaero patches live off"), false);
+        return 1;
+    }
+
+    private static int togglePatchVisualization(final CommandSourceStack source) throws CommandSyntaxException {
+        final ServerPlayer player = source.getPlayerOrException();
+        return setPatchVisualization(source, !AeroPatchVisualizer.isEnabled(player.getUUID()));
+    }
+
+    private static int setPatchVisualization(final CommandSourceStack source, final boolean enabled) throws CommandSyntaxException {
+        final ServerPlayer player = source.getPlayerOrException();
+        AeroPatchVisualizer.setEnabled(player, enabled);
+        source.sendSuccess(() -> Component.literal(
+                enabled
+                        ? "PMWeather Aeronautics patch visualization enabled for the nearest Sable/Aeronautics structure."
+                        : "PMWeather Aeronautics patch visualization disabled."), false);
+        if (enabled) {
+            source.sendSuccess(() -> Component.literal(AeroPatchVisualizer.status(player)), false);
+        }
+        return 1;
+    }
+
     private static String formatSampleStatsActionBar(final WeatherWindField.SampleStats stats) {
         return format(
                 "PMWA patches: %d/%d fresh/tick | %d/s fresh | %d/s req | %d/s cached | %d/s capped | obj=%d | target=%d",
@@ -157,4 +198,9 @@ public final class DebugWindCommand {
     private static String format(final String pattern, final Object... args) {
         return String.format(Locale.ROOT, pattern, args);
     }
+    static void clearSession() {
+        LIVE_SAMPLE_MONITORS.clear();
+        AeroPatchVisualizer.clearSession();
+    }
+
 }

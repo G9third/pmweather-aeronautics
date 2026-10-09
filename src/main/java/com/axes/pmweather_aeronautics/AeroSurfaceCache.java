@@ -5,6 +5,7 @@ import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import dev.ryanhcode.sable.sublevel.plot.LevelPlot;
 import dev.ryanhcode.sable.sublevel.plot.PlotChunkHolder;
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -79,8 +80,9 @@ public final class AeroSurfaceCache {
         }
 
         final String key = String.valueOf(subLevel.getUniqueId());
-        final long currentTick = subLevel.getLevel().getGameTime();
-        pruneIfNeeded(currentTick);
+        final ServerLevel level = subLevel.getLevel();
+        final long currentTick = level.getGameTime();
+        pruneIfNeeded(level.getServer().getTickCount());
         final long revision = DIRTY_REVISIONS.getOrDefault(key, 0L);
         final CachedProfile cached = CACHE.get(key);
         if (cached != null && cached.bounds().equals(bounds) && cached.revision() == revision && currentTick - cached.tick() < 1200L) {
@@ -88,7 +90,7 @@ public final class AeroSurfaceCache {
         }
 
         final AerodynamicProfile profile = build(subLevel, bounds, revision);
-        CACHE.put(key, new CachedProfile(bounds, revision, profile, currentTick));
+        CACHE.put(key, new CachedProfile(level, bounds, revision, profile, currentTick));
         return profile;
     }
 
@@ -107,6 +109,8 @@ public final class AeroSurfaceCache {
         if (rawSurfacePatches.isEmpty()) {
             return AerodynamicProfile.EMPTY.withRevision(revision, solidCells.fingerprint());
         }
+        // Resolve shape anchors only when geometry is rebuilt, never on each flight tick.
+        rawSurfacePatches.replaceAll(face -> anchorOnCollisionShape(subLevel, face));
 
         final int maxCachedPatches = Math.max(64, Math.min(32768, Config.maxCachedAeroPatches()));
         final List<ProfileFace> cachedPatches = rawSurfacePatches.size() > maxCachedPatches
@@ -397,7 +401,50 @@ public final class AeroSurfaceCache {
             case ROLE_ROOF, ROLE_BOTTOM -> new Vec3(aCenter, key.plane(), bCenter);
             default -> Vec3.ZERO;
         };
-        return new ProfileFace(point, normal, area);
+        return new ProfileFace(
+                point,
+                normal,
+                area,
+                AeroPatchVisualizer.hasViewers()
+                        ? List.of(new PatchFootprint(
+                                key.role(),
+                                key.plane(),
+                                key.minA() + a0,
+                                key.minB() + b0,
+                                height,
+                                width
+                        ))
+                        : List.of(),
+                new PatchFootprint(key.role(), key.plane(), key.minA() + a0, key.minB() + b0, height, width)
+                        .localFaceCenter((height - 1) / 2, (width - 1) / 2),
+                "voxel_face"
+        );
+    }
+
+    private static ProfileFace anchorOnCollisionShape(ServerSubLevel body, ProfileFace face) {
+        Vec3 anchor = face.sampleAnchor();
+        String source = "voxel_face_no_collision_shape";
+        try {
+            Vec3 inside = anchor.subtract(face.normal().scale(0.5));
+            BlockPos pos = BlockPos.containing(inside.x, inside.y, inside.z);
+            BlockState state = body.getLevel().getBlockState(pos);
+            double bestPlane = Double.NEGATIVE_INFINITY;
+            double bestDistance = Double.POSITIVE_INFINITY;
+            Vec3 selected = null;
+            for (net.minecraft.world.phys.AABB box : state.getCollisionShape(body.getLevel(), pos).toAabbs()) {
+                Vec3 candidate = new Vec3(
+                        pos.getX() + (face.normal().x > 0 ? box.maxX : face.normal().x < 0 ? box.minX : (box.minX + box.maxX) * 0.5),
+                        pos.getY() + (face.normal().y > 0 ? box.maxY : face.normal().y < 0 ? box.minY : (box.minY + box.maxY) * 0.5),
+                        pos.getZ() + (face.normal().z > 0 ? box.maxZ : face.normal().z < 0 ? box.minZ : (box.minZ + box.maxZ) * 0.5));
+                double plane = candidate.dot(face.normal());
+                double distance = candidate.distanceToSqr(anchor);
+                if (plane > bestPlane || (plane == bestPlane && distance < bestDistance)) {
+                    selected = candidate; bestPlane = plane; bestDistance = distance;
+                }
+            }
+            if (selected != null) { anchor = selected; source = "collision_shape"; }
+        } catch (RuntimeException exception) { source = "voxel_face_shape_error"; }
+        return new ProfileFace(face.point(), face.normal(), face.weight(), face.sourceFootprints(), anchor, source);
     }
 
     private static ProfileAccumulator accumulatorForRole(final int role,
@@ -525,17 +572,30 @@ public final class AeroSurfaceCache {
         double y = 0.0D;
         double z = 0.0D;
         final Vec3 normal = group.get(0).normal();
+        final List<PatchFootprint> sourceFootprints = new ArrayList<>();
         for (final ProfileFace face : group) {
             final double area = Math.max(0.0D, face.weight());
             x += face.point().x * area;
             y += face.point().y * area;
             z += face.point().z * area;
             totalArea += area;
+            sourceFootprints.addAll(face.sourceFootprints());
         }
         if (totalArea <= 1.0e-12D) {
             return group.get(0);
         }
-        return new ProfileFace(new Vec3(x / totalArea, y / totalArea, z / totalArea), normal, totalArea);
+        final Vec3 centroid = new Vec3(x / totalArea, y / totalArea, z / totalArea);
+        // Keep an actual constituent surface point; an averaged point can lie inside the body.
+        ProfileFace anchorFace = group.get(0);
+        for (ProfileFace candidate : group) {
+            if (candidate.sampleAnchor().distanceToSqr(centroid) < anchorFace.sampleAnchor().distanceToSqr(centroid)) anchorFace = candidate;
+        }
+        return new ProfileFace(
+                centroid,
+                normal,
+                totalArea,
+                List.copyOf(sourceFootprints), anchorFace.sampleAnchor(), anchorFace.anchorSource()
+        );
     }
 
     private static double primarySort(final ProfileFace face, final int role) {
@@ -663,19 +723,26 @@ public final class AeroSurfaceCache {
         return (min + max) * 0.5D;
     }
 
+    private static boolean isFinite(final Vec3 vector) {
+        return vector != null
+                && Double.isFinite(vector.x)
+                && Double.isFinite(vector.y)
+                && Double.isFinite(vector.z);
+    }
+
     private static int currentCacheSalt(final long revision, final long fingerprint) {
         return (int) ((revision * 31L + fingerprint) & 0x3ffL);
     }
 
-    private static void pruneIfNeeded(final long currentTick) {
-        if (lastPruneTick == currentTick || currentTick % 200L != 0L) {
+    private static void pruneIfNeeded(final long serverTick) {
+        if (lastPruneTick == serverTick || serverTick % 200L != 0L) {
             return;
         }
-        lastPruneTick = currentTick;
+        lastPruneTick = serverTick;
         final Iterator<Map.Entry<String, CachedProfile>> iterator = CACHE.entrySet().iterator();
         while (iterator.hasNext()) {
             final Map.Entry<String, CachedProfile> entry = iterator.next();
-            if (currentTick - entry.getValue().tick() > 1200L) {
+            if (entry.getValue().level().getGameTime() - entry.getValue().tick() > 1200L) {
                 iterator.remove();
             }
         }
@@ -688,7 +755,8 @@ public final class AeroSurfaceCache {
         double weight;
 
         void add(final double x, final double y, final double z, final double weight) {
-            if (!Double.isFinite(weight) || weight <= 0.0D) {
+            if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)
+                    || !Double.isFinite(weight) || weight <= 0.0D) {
                 return;
             }
             this.x += x * weight;
@@ -732,7 +800,7 @@ public final class AeroSurfaceCache {
 
         Vec3 worldPoint(final int role, final Vec3 fallback, final Pose3d pose) {
             final ProfileFace face = face(role);
-            if (face.point() == Vec3.ZERO || face.point().lengthSqr() <= 1.0e-12D) {
+            if (face.weight() <= 0.0D || !isFinite(face.point())) {
                 return fallback;
             }
             PROFILE_WORLD_POINT.set(face.point().x, face.point().y, face.point().z);
@@ -753,7 +821,53 @@ public final class AeroSurfaceCache {
         }
     }
 
-    record ProfileFace(Vec3 point, Vec3 normal, double weight) {
+    /**
+     * One selected aerodynamic patch. sourceFootprints retains the exact greedy-merged exposed
+     * block-face rectangles represented by this patch, even when smart LOD combines several
+     * base patches into one wind sample. It is debug metadata only and does not change forces.
+     */
+    record ProfileFace(Vec3 point, Vec3 normal, double weight, List<PatchFootprint> sourceFootprints,
+                       Vec3 sampleAnchor, String anchorSource) {
+        ProfileFace(final Vec3 point, final Vec3 normal, final double weight, final List<PatchFootprint> sourceFootprints) {
+            this(point, normal, weight, sourceFootprints, point, "voxel_face");
+        }
+        ProfileFace(final Vec3 point, final Vec3 normal, final double weight) {
+            this(point, normal, weight, List.of());
+        }
+
+        ProfileFace {
+            sourceFootprints = sourceFootprints == null ? List.of() : List.copyOf(sourceFootprints);
+        }
+
+        int representedFaceCount() {
+            int total = 0;
+            for (final PatchFootprint footprint : this.sourceFootprints) {
+                total += footprint.faceCount();
+            }
+            return total;
+        }
+    }
+
+    /** Compact exact source membership for one greedy rectangular exposed-face patch. */
+    record PatchFootprint(int role, int plane, int startA, int startB, int height, int width) {
+        int faceCount() {
+            return Math.max(0, this.height) * Math.max(0, this.width);
+        }
+
+        Vec3 localFaceCenter(final int da, final int db) {
+            final double a = this.startA + da + 0.5D;
+            final double b = this.startB + db + 0.5D;
+            return switch (this.role) {
+                case ROLE_WEST, ROLE_EAST -> new Vec3(this.plane, a, b);
+                case ROLE_NORTH, ROLE_SOUTH -> new Vec3(a, b, this.plane);
+                case ROLE_ROOF, ROLE_BOTTOM -> new Vec3(a, this.plane, b);
+                default -> Vec3.ZERO;
+            };
+        }
+
+        Vec3 localNormal() {
+            return localNormalForRole(this.role);
+        }
     }
 
     private record SolidCellSet(Set<Long> cells, long fingerprint) {
@@ -765,6 +879,12 @@ public final class AeroSurfaceCache {
     private record SurfacePlaneKey(int role, int plane, int minA, int minB) {
     }
 
-    private record CachedProfile(ProfileBounds bounds, long revision, AerodynamicProfile profile, long tick) {
+    private record CachedProfile(ServerLevel level, ProfileBounds bounds, long revision, AerodynamicProfile profile, long tick) {
     }
+    static void invalidateProfilesForDebugMembershipToggle() {
+        CACHE.clear();
+    }
+
+    static void clearSession() { CACHE.clear(); DIRTY_REVISIONS.clear(); lastPruneTick = Long.MIN_VALUE; }
+
 }

@@ -9,6 +9,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3d;
@@ -51,8 +52,10 @@ final class PhysicsTickWindBatch {
         if (subLevel == null) {
             return;
         }
-        final long tick = subLevel.getLevel().getGameTime();
-        rollActiveTick(tick);
+        final ServerLevel level = subLevel.getLevel();
+        final long tick = level.getGameTime();
+        final long serverTick = level.getServer().getTickCount();
+        rollActiveTick(serverTick);
         final String subLevelKey = key(subLevel);
         ACTIVE_SUBLEVELS_THIS_TICK.add(subLevelKey);
 
@@ -61,7 +64,7 @@ final class PhysicsTickWindBatch {
             return;
         }
 
-        final FrameState frame = new FrameState(tick);
+        final FrameState frame = new FrameState(level, tick);
         if (Config.enableAirflowLift()) {
             int sourceId = 0;
             collectSource(frame, subLevel, null, sourceId++, subLevel.getPlot().getLiftProviders());
@@ -75,7 +78,7 @@ final class PhysicsTickWindBatch {
             frame.components.addAll(buildComponents(frame.providerNodes));
         }
         FRAMES.put(subLevelKey, frame);
-        prune(tick);
+        prune(serverTick);
     }
 
     /** Plans a fair body/airflow split for this sub-level. */
@@ -712,12 +715,12 @@ final class PhysicsTickWindBatch {
         return String.valueOf(subLevel.getUniqueId());
     }
 
-    private static void prune(final long tick) {
-        if (lastPruneTick == tick || tick % 200L != 0L) {
+    private static void prune(final long serverTick) {
+        if (lastPruneTick == serverTick || serverTick % 200L != 0L) {
             return;
         }
-        lastPruneTick = tick;
-        FRAMES.entrySet().removeIf(entry -> tick - entry.getValue().tick > 20L);
+        lastPruneTick = serverTick;
+        FRAMES.entrySet().removeIf(entry -> entry.getValue().level.getGameTime() - entry.getValue().tick > 20L);
     }
 
     record PendingRequest(long requestId, Vec3 samplePosition, int cacheRole) {
@@ -779,6 +782,7 @@ final class PhysicsTickWindBatch {
             .thenComparingInt(node -> node.sourcePosition().getZ());
 
     private static final class FrameState {
+        final ServerLevel level;
         final long tick;
         final List<ProviderNode> providerNodes = new ArrayList<>();
         final List<ProviderComponent> components = new ArrayList<>();
@@ -798,8 +802,11 @@ final class PhysicsTickWindBatch {
         boolean planned;
         boolean resolved;
 
-        FrameState(final long tick) {
+        FrameState(final ServerLevel level, final long tick) {
+            this.level = level;
             this.tick = tick;
         }
     }
+    static void clearSession() { FRAMES.clear(); ACTIVE_SUBLEVELS_THIS_TICK.clear(); activeTick = Long.MIN_VALUE; previousTickActiveSubLevels = 1; lastPruneTick = Long.MIN_VALUE; }
+
 }

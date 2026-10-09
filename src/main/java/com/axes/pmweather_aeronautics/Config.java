@@ -3,13 +3,13 @@ import net.neoforged.neoforge.common.ModConfigSpec;
 public final class Config {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
     static {
-        BUILDER.comment("PMWeather Aeronautics config schema: 0.9.0b cleanup-2tick");
+        BUILDER.comment("PMWeather Aeronautics config schema: 1.0");
         BUILDER.push("general");
     }
     public static final ModConfigSpec.DoubleValue WIND_THRESHOLD = BUILDER
             .comment("Minimum PMWeather wind-vector magnitude before effects are applied. This stays in PMWeather/mph-style units even though physics wind is converted internally.")
             .translation("pmweather_aeronautics.configuration.windThreshold")
-            .defineInRange("windThreshold", 8.0D, 0.0D, 300.0D);
+            .defineInRange("windThreshold", 0.0D, 0.0D, 300.0D);
     public static final ModConfigSpec.BooleanValue ENABLE_TORNADO_SUCTION = BUILDER
             .comment("Allow ProtoManly's Weather native tornadic wind vectors, including their real vertical component, in sampled wind.")
             .translation("pmweather_aeronautics.configuration.enableTornadoSuction")
@@ -59,9 +59,9 @@ public final class Config {
             .translation("pmweather_aeronautics.configuration.enableBodyRelativeWindDrag")
             .define("enableBodyRelativeWindDrag", true);
     public static final ModConfigSpec.DoubleValue WIND_INFLUENCE = BUILDER
-            .comment("Main whole-body wind strength after PMWeather mph-style wind is converted to block/second physics speed. Default 0.06 is tuned for the quadratic surface-pressure solver and Sable's kpg block mass scale. Tornado wind still ramps with wind speed squared, but normal 10-15 mph wind is calmer than the 0.7.5e 0.1 default.")
+            .comment("Main whole-body wind strength after PMWeather mph-style wind is converted to block/second physics speed. Default 0.1 uses the selected stronger whole-body pressure scale. Tornado wind still ramps with wind speed squared.")
             .translation("pmweather_aeronautics.configuration.windInfluence")
-            .defineInRange("windInfluence", 0.06D, 0.0D, 100.0D);
+            .defineInRange("windInfluence", 0.1D, 0.0D, 100.0D);
     public static final ModConfigSpec.DoubleValue MASS_SCALING = BUILDER
             .comment("Optional extra mass damping for body wind. 0.0 = no extra damping, 1.0 = strongest damping. Sable physics already handles real mass.")
             .translation("pmweather_aeronautics.configuration.massScaling")
@@ -130,10 +130,10 @@ public final class Config {
             .comment("Global safety budget for fresh PMWeather wind queries per server tick. Body exterior patches and component-local lift-provider airflow probes share this budget, reduce spatial detail fairly, deduplicate exact coordinates, then fall back to cached/zero wind if the hard limit is still reached.")
             .translation("pmweather_aeronautics.configuration.maxWindSamplesPerTick")
             .defineInRange("maxWindSamplesPerTick", 128, 16, 100000);
-    public static final ModConfigSpec.DoubleValue EDGE_WIND_SAMPLE_MARGIN = BUILDER
-            .comment("Distance outside each exposed body face where PMWeather wind is sampled. Increase only if nearby contraption blocks interfere with exterior sampling.")
-            .translation("pmweather_aeronautics.configuration.edgeWindSampleMargin")
-            .defineInRange("edgeWindSampleMargin", 2.0D, 0.0D, 64.0D);
+    public static final ModConfigSpec.DoubleValue BODY_SURFACE_PROBE_OFFSET = BUILDER
+            .comment("Small numerical clearance outside a real source block surface. Replaces the obsolete edgeWindSampleMargin setting; old 2-block values are not reused. Does not move the pressure application point.")
+            .translation("pmweather_aeronautics.configuration.bodySurfaceProbeOffset")
+            .defineInRange("bodySurfaceProbeOffset", 0.015625D, 0.001D, 0.0625D);
     static {
         BUILDER.pop();
         BUILDER.push("debug");
@@ -149,7 +149,7 @@ public final class Config {
     private Config() {
     }
     public static double windThreshold() {
-        return doubleValue(WIND_THRESHOLD, 8.0D);
+        return doubleValue(WIND_THRESHOLD, 0.0D);
     }
     public static boolean enableTornadoSuction() {
         return booleanValue(ENABLE_TORNADO_SUCTION, true);
@@ -182,7 +182,7 @@ public final class Config {
         return booleanValue(ENABLE_BODY_RELATIVE_WIND_DRAG, true);
     }
     public static double windInfluence() {
-        return doubleValue(WIND_INFLUENCE, 0.06D);
+        return doubleValue(WIND_INFLUENCE, 0.1D);
     }
     public static double massScaling() {
         return doubleValue(MASS_SCALING, 0.0D);
@@ -226,8 +226,8 @@ public final class Config {
     public static int maxWindSamplesPerTick() {
         return intValue(MAX_WIND_SAMPLES_PER_TICK, 128);
     }
-    public static double edgeWindSampleMargin() {
-        return doubleValue(EDGE_WIND_SAMPLE_MARGIN, 2.0D);
+    public static double bodySurfaceProbeOffset() {
+        return doubleValue(BODY_SURFACE_PROBE_OFFSET, 0.015625D);
     }
     public static boolean debugLogging() {
         return booleanValue(DEBUG_LOGGING, false);

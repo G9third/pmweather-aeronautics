@@ -25,23 +25,12 @@ final class SableAeroSolver {
     }
 
     static Vector3d pressureLineCenter(final int role, final Vector3dc profileCenter, final Vector3dc centerOfMass) {
-        final Vector3d center = new Vector3d(profileCenter);
-        switch (role) {
-            case 2, 3 -> {
-                center.y = centerOfMass.y();
-                center.z = centerOfMass.z();
-            }
-            case 4, 5 -> {
-                center.x = centerOfMass.x();
-                center.y = centerOfMass.y();
-            }
-            case 1, 6 -> {
-                center.x = centerOfMass.x();
-                center.z = centerOfMass.z();
-            }
-            default -> center.set(centerOfMass);
+        if (isFinite(profileCenter)) {
+            return new Vector3d(profileCenter);
         }
-        return center;
+        return centerOfMass == null || !isFinite(centerOfMass)
+                ? new Vector3d()
+                : new Vector3d(centerOfMass);
     }
 
     static Vector3d computeDifferentialPressureTorque(final MassData massData,
@@ -52,6 +41,9 @@ final class SableAeroSolver {
                 || massData == null
                 || entries == null
                 || entries.isEmpty()
+                || pressureLineCenter == null
+                || !isFinite(pressureLineCenter)
+                || !isFinite(totalImpulse)
                 || totalImpulse.lengthSquared() <= 1.0e-12D) {
             return new Vector3d(ZERO_TORQUE);
         }
@@ -82,5 +74,12 @@ final class SableAeroSolver {
         if (len > maxLength) {
             vector.mul(maxLength / len);
         }
+    }
+
+    private static boolean isFinite(final Vector3dc vector) {
+        return vector != null
+                && Double.isFinite(vector.x())
+                && Double.isFinite(vector.y())
+                && Double.isFinite(vector.z());
     }
 }

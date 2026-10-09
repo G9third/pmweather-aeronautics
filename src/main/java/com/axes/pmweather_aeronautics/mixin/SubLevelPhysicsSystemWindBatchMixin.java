@@ -1,6 +1,7 @@
 package com.axes.pmweather_aeronautics.mixin;
 
 import com.axes.pmweather_aeronautics.WeatherForceApplier;
+import com.axes.pmweather_aeronautics.ForceDiagnostics;
 import dev.ryanhcode.sable.api.sublevel.ServerSubLevelContainer;
 import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
 import org.spongepowered.asm.mixin.Mixin;
@@ -16,6 +17,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(value = SubLevelPhysicsSystem.class, remap = false)
 public abstract class SubLevelPhysicsSystemWindBatchMixin {
+    @Inject(method = "tickPipelinePhysics", at = @At(value = "INVOKE",
+            target = "Ldev/ryanhcode/sable/api/physics/PhysicsPipeline;physicsTick(D)V", shift = At.Shift.BEFORE), require = 0)
+    private void pmaero$beforeNativeSolver(ServerSubLevelContainer container, CallbackInfo ci) {
+        if (ForceDiagnostics.enabled()) ForceDiagnostics.beforeSolver((SubLevelPhysicsSystem)(Object)this);
+    }
+
     @Inject(
             method = "tickPipelinePhysics",
             at = @At(

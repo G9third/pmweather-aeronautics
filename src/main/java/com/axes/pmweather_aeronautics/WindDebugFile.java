@@ -23,11 +23,49 @@ import java.util.Locale;
  * changing physics behavior.
  */
 final class WindDebugFile {
-    private static final Path DEBUG_PATH = Paths.get("logs", "pmweather_aeronautics_sable_wind_debug.csv");
+    private static Path debugPath = Paths.get("logs", "pmweather_aeronautics_sable_wind_debug.csv");
+    private static long writtenBytes;
     private static BufferedWriter writer;
+    private static CompressedDebugOutput output;
     private static boolean enabled;
     private static String sessionId = "none";
     private static long lastFlushTick = Long.MIN_VALUE;
+    private static java.util.Set<String> selectedBodies;
+
+    static boolean accepts(String id) { return selectedBodies == null || selectedBodies.contains(id); }
+
+    static int startNearby(final CommandSourceStack source) {
+        if (enabled) return status(source);
+        java.util.Set<String> selection = new java.util.HashSet<>();
+        var container = dev.ryanhcode.sable.api.sublevel.SubLevelContainer.getContainer(source.getLevel());
+        if (container != null) for (var body : container.getAllSubLevels()) {
+            if (body.isRemoved()) continue;
+            if (body.getMassTracker().isInvalid()) continue;
+            var position = body.logicalPose().transformPosition(new org.joml.Vector3d(body.getMassTracker().getCenterOfMass()));
+            var origin = source.getPosition();
+            double dx = position.x() - origin.x, dy = position.y() - origin.y, dz = position.z() - origin.z;
+            if (dx * dx + dy * dy + dz * dz <= 128.0 * 128.0) selection.add(String.valueOf(body.getUniqueId()));
+        }
+        if (selection.isEmpty()) {
+            source.sendFailure(Component.literal("No Sable bodies within 128 blocks. Move closer or use /pmaero winddebug start."));
+            return 0;
+        }
+        int result = start(source);
+        if (result != 0) {
+            selectedBodies = selection;
+            ForceDiagnostics.event(null, "body_selection", "ids", selection.toArray(), "radius", 128);
+        }
+        return result;
+    }
+
+    static int mark(final CommandSourceStack source, String label) {
+        if (!enabled) { source.sendFailure(Component.literal("Start winddebug first.")); return 0; }
+        ForceDiagnostics.event(null, "mark", "label", label, "tick", source.getLevel().getGameTime(), "position", source.getPosition());
+        try { writeCsv("mark", source.getLevel().getGameTime(), label); flush(); }
+        catch (IOException e) { disableAfterError(e); return 0; }
+        source.sendSuccess(() -> Component.literal("PMAero debug marker: " + label), false);
+        return 1;
+    }
 
     private WindDebugFile() {
     }
@@ -37,19 +75,25 @@ final class WindDebugFile {
     }
 
     static int start(final CommandSourceStack source) {
+        if (enabled) return status(source);
+        selectedBodies = null;
         try {
+            sessionId = System.currentTimeMillis() + "-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+            debugPath = Paths.get("logs", "pmweather_aeronautics_sable_wind_debug-" + sessionId + ".csv.gz");
+            writtenBytes = 0;
             openWriter();
             enabled = true;
-            sessionId = String.valueOf(System.currentTimeMillis());
+            ForceDiagnostics.start(debugPath.resolveSibling(debugPath.getFileName().toString().replace(".csv", ".jsonl")));
             writeHeaderIfNeeded();
             writeRawLine("MARK," + sessionId + "," + Instant.now() + ",debug-start");
             flush();
-            source.sendSuccess(() -> Component.literal("PMWeather Aeronautics wind debug file enabled: " + DEBUG_PATH), false);
-            source.sendSuccess(() -> Component.literal("Reproduce the spin for 5-20 seconds, then run /pmaero winddebug stop and send the CSV."), false);
+            source.sendSuccess(() -> Component.literal("PMAero full force audit started: " + debugPath), false);
+            source.sendSuccess(() -> Component.literal("Record 20-40 seconds, then /pmaero winddebug stop. Send BOTH matching .csv.gz and .jsonl.gz. Auto-stop: 5 minutes or approximately 64 MiB compressed per file."), false);
             return 1;
         } catch (final IOException e) {
             enabled = false;
             closeQuietly();
+            ForceDiagnostics.close();
             source.sendFailure(Component.literal("Could not start PMWeather Aeronautics wind debug file: " + e.getMessage()));
             return 0;
         }
@@ -70,13 +114,14 @@ final class WindDebugFile {
 
         enabled = false;
         closeQuietly();
-        source.sendSuccess(() -> Component.literal("PMWeather Aeronautics wind debug file stopped: " + DEBUG_PATH), false);
+        ForceDiagnostics.close();
+        source.sendSuccess(() -> Component.literal("PMAero full force audit stopped: " + debugPath + " and matching .jsonl.gz"), false);
         return 1;
     }
 
     static int status(final CommandSourceStack source) {
         source.sendSuccess(() -> Component.literal("PMWeather Aeronautics wind debug file: " + (enabled ? "enabled" : "disabled")), false);
-        source.sendSuccess(() -> Component.literal("Path: " + DEBUG_PATH), false);
+        source.sendSuccess(() -> Component.literal("Path: " + debugPath + " and matching .jsonl.gz"), false);
         return 1;
     }
 
@@ -97,7 +142,7 @@ final class WindDebugFile {
                              final int windwardSamples,
                              final int pressureGroups,
                              final WeatherWindField.SampleStats stats) {
-        if (!enabled) {
+        if (!enabled || !accepts(subLevelId)) {
             return;
         }
 
@@ -148,7 +193,7 @@ final class WindDebugFile {
                              final Vector3dc localApplicationPoint,
                              final Vector3dc localPressureCenter,
                              final Vector3dc localImpulse) {
-        if (!enabled) {
+        if (!enabled || !accepts(subLevelId)) {
             return;
         }
 
@@ -189,7 +234,7 @@ final class WindDebugFile {
                             final Vector3dc localPressureCenter,
                             final Vector3dc totalLocalImpulse,
                             final Vector3dc localTorque) {
-        if (!enabled) {
+        if (!enabled || !accepts(subLevelId)) {
             return;
         }
 
@@ -214,22 +259,19 @@ final class WindDebugFile {
         if (writer != null) {
             return;
         }
-        final Path parent = DEBUG_PATH.getParent();
+        final Path parent = debugPath.getParent();
         if (parent != null) {
             Files.createDirectories(parent);
         }
-        writer = Files.newBufferedWriter(
-                DEBUG_PATH,
-                StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.TRUNCATE_EXISTING
-        );
+        output = new CompressedDebugOutput(debugPath);
+        writer = output.writer;
     }
 
     private static void writeHeaderIfNeeded() throws IOException {
-        if (!Files.exists(DEBUG_PATH) || Files.size(DEBUG_PATH) == 0L) {
+        if (writtenBytes == 0L) {
             writeRawLine("# PMWeather Aeronautics Sable wind debug CSV");
-            writeRawLine("# Rows are intentionally variable-width. rowType is the first column.");
+            writeRawLine("# 1.0: variable-width rows; session is column 0 and rowType is column 1. MARK rows are special.");
+            writeRawLine("# Legacy force/torque columns contain IMPULSES, not forces. See matching JSONL for units, settings, face decisions and physics phases.");
             writeRawLine("# object rows: rowType,tick,subLevelId,... net force/torque and current sampling counters.");
             writeRawLine("# sample rows: rowType,tick,subLevelId,sampleIndex,side,... raw/final PMWeather wind are mph-style units; relative/pressure wind and impulses are physics units.");
             writeRawLine("# side rows: rowType,tick,subLevelId,side,... center-of-pressure impulse and local torque.");
@@ -282,9 +324,14 @@ final class WindDebugFile {
     }
 
     private static void writeRawLine(final String line) throws IOException {
-        openWriter();
+        if (writer == null) return;
+        if (output.bytes() >= 64L * 1024 * 1024) {
+            PMWeatherAeronautics.LOGGER.info("PMAero winddebug stopped at the CSV size limit.");
+            clearSession(); return;
+        }
         writer.write(line);
         writer.newLine();
+        writtenBytes += line.getBytes(StandardCharsets.UTF_8).length + 1;
     }
 
     private static void flushOccasionally(final long tick) throws IOException {
@@ -298,11 +345,13 @@ final class WindDebugFile {
         if (writer != null) {
             writer.flush();
         }
+        ForceDiagnostics.flush();
     }
 
     private static void disableAfterError(final IOException e) {
         enabled = false;
         closeQuietly();
+        ForceDiagnostics.close();
         PMWeatherAeronautics.LOGGER.error("PMWeather Aeronautics wind debug file disabled after write failure", e);
     }
 
@@ -315,6 +364,9 @@ final class WindDebugFile {
         } catch (final IOException ignored) {
         } finally {
             writer = null;
+            output = null;
         }
     }
+    static void clearSession() { enabled = false; closeQuietly(); ForceDiagnostics.close(); sessionId = "none"; lastFlushTick = Long.MIN_VALUE; }
+
 }

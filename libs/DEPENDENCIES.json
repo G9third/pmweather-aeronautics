@@ -1,0 +1,26 @@
+{
+  "compile_only_dependencies": [
+    {
+      "name": "PMWeather",
+      "version": "1.21.1-0.17.14-alpha",
+      "filename": "pmweather-1.21.1-0.17.14-alpha.jar",
+      "url": "https://cdn.modrinth.com/data/TfCsmTLI/versions/twmdjNBb/pmweather-1.21.1-0.17.14-alpha.jar",
+      "sha256": "bd6842115cb79987fa58dd1835d6300a33fe66cb14586469f1e559c65fccba17"
+    },
+    {
+      "name": "Sable NeoForge",
+      "version": "1.21.1-2.0.5",
+      "filename": "sable-neoforge-1.21.1-2.0.5.jar",
+      "url": "https://edge.forgecdn.net/files/8673/825/sable-neoforge-1.21.1-2.0.5.jar",
+      "sha256": "c8710f85bc780bbf523e6726ceaaf76dd0b8c61479db497b382c6bb34317e7ab"
+    },
+    {
+      "name": "Sable Companion Common",
+      "version": "1.21.1-1.6.0",
+      "filename": "sable-companion-common-1.21.1-1.6.0.jar",
+      "source_filename": "sable-neoforge-1.21.1-2.0.5.jar",
+      "archive_entry": "META-INF/jarjar/sable-companion-common-1.21.1-1.6.0.jar",
+      "sha256": "873633e35046e3761b277ff8a1ecad0d55d9a3014fa81a0b084c9aecba1f3bed"
+    }
+  ]
+}

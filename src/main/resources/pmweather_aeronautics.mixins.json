@@ -6,7 +6,11 @@
   "mixins": [
     "BlockSubLevelLiftProviderMixin",
     "SubLevelPhysicsSystemWindBatchMixin",
-    "LevelPlotAeroCacheMixin"
+    "LevelPlotAeroCacheMixin",
+    "RigidBodyDiagnosticsMixin",
+    "OffroadWheelDiagnosticsMixin",
+    "OffroadTerrainCastResultMixin",
+    "NoHorizonTrackContactMixin"
   ],
   "injectors": {
     "defaultRequire": 0
