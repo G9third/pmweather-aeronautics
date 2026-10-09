@@ -32,6 +32,15 @@ for uninspected versions or independent wheel solvers.
 The body `windInfluence` default and fallback remain `0.1`; `windThreshold` defaults to
 `0.0`. Existing saved configuration values are retained by NeoForge.
 
+## Aerowind commands
+
+Use `/aerowind wind` for a wind reading and `/aerowind live on|off` to toggle the small
+live HUD. `/aerowind test start` runs the short flight sequence; use `stress`, `status`,
+`next`, `stop`, or `list` under `/aerowind test` to manage or inspect it. The default
+sequence is about three minutes and the complete test is capped at five minutes. PMIV
+uses the same test and HUD when installed, while PMAero works on its own for supported
+Sable bodies.
+
 ## Public APIs
 
 `PMWeatherWindApi`, `ExternalAirframeBodyApi`, and `ExternalLiftingSurfaceApi` remain at

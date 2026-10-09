@@ -17,11 +17,13 @@ public final class PMWeatherAeronautics {
     public static final Logger LOGGER = LogUtils.getLogger();
     public PMWeatherAeronautics(final IEventBus modBus, final ModContainer modContainer) {
         PMWeatherForceGroups.register(modBus);
+        modBus.addListener(WindMonitorNetwork::registerPayloads);
         migrateAdaptiveBatchConfigTo090bIfNeeded();
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
         // Sable fires this once for each physics sub-step, which is the right time to add impulses.
         SableEventPlatform.INSTANCE.onPhysicsTick(WeatherForceApplier::onSablePrePhysicsTick);
         SableEventPlatform.INSTANCE.onPostPhysicsTick(ForceDiagnostics::afterPhysics);
+        AerowindTest.registerEvents();
         NeoForge.EVENT_BUS.addListener(DebugWindCommand::register);
         NeoForge.EVENT_BUS.addListener(DebugWindCommand::onServerTick);
         NeoForge.EVENT_BUS.addListener(ForceDiagnostics::serverTick);

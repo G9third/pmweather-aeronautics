@@ -107,19 +107,21 @@ public final class PMWeatherWindApi {
         for (int i = 0; i < samples.size(); i++) {
             final WeatherWindField.RawWindSample sample = samples.get(i);
             final int base = i * PACKED_RESULT_STRIDE;
-            packed[base] = sample.wind().x;
-            packed[base + 1] = sample.wind().y;
-            packed[base + 2] = sample.wind().z;
-            packed[base + 3] = sample.nativeTornadoVectorUsed() ? 1.0D : 0.0D;
-            packed[base + 4] = sample.stormSnapshotCount();
-            packed[base + 5] = sample.tornadicStormSnapshotCount();
-            packed[base + 6] = sample.maximumStormStage();
-            packed[base + 7] = sample.nearestStormDistanceMeters();
-            packed[base + 8] = sample.nearestStormStage();
-            packed[base + 9] = sample.nearestStormTornadic() ? 1.0D : 0.0D;
-            packed[base + 10] = sample.nearestStormWidthMeters();
-            packed[base + 11] = sample.nearestStormTornadoInfluenceRadiusMeters();
-            packed[base + 12] = sample.nearestStormWindspeedMph();
+            final Vec3 testWind = AerowindTest.sample(level, positions.get(i));
+            final Vec3 resolvedWind = testWind == null ? sample.wind() : testWind;
+            packed[base] = resolvedWind.x;
+            packed[base + 1] = resolvedWind.y;
+            packed[base + 2] = resolvedWind.z;
+            packed[base + 3] = testWind == null && sample.nativeTornadoVectorUsed() ? 1.0D : 0.0D;
+            packed[base + 4] = testWind == null ? sample.stormSnapshotCount() : 0;
+            packed[base + 5] = testWind == null ? sample.tornadicStormSnapshotCount() : 0;
+            packed[base + 6] = testWind == null ? sample.maximumStormStage() : 0;
+            packed[base + 7] = testWind == null ? sample.nearestStormDistanceMeters() : Double.POSITIVE_INFINITY;
+            packed[base + 8] = testWind == null ? sample.nearestStormStage() : 0;
+            packed[base + 9] = testWind == null && sample.nearestStormTornadic() ? 1.0D : 0.0D;
+            packed[base + 10] = testWind == null ? sample.nearestStormWidthMeters() : 0;
+            packed[base + 11] = testWind == null ? sample.nearestStormTornadoInfluenceRadiusMeters() : 0;
+            packed[base + 12] = testWind == null ? sample.nearestStormWindspeedMph() : 0;
         }
         return packed;
     }
