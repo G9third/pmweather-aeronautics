@@ -18,6 +18,8 @@ public final class ExternalApiChecks {
         spanwiseSkinFriction();
         translatedBodyFrame();
         invalidGeometryAndEmptyBatches();
+        weatherTestHeadingAndFade();
+        worldAndSubLevelProbeCoordinates();
         System.out.println("External aerodynamic API checks passed: " + checks);
     }
 
@@ -207,6 +209,49 @@ public final class ExternalApiChecks {
         double[] vacuum = wing(); vacuum[32] = 0.0;
         double[] zero = evaluate(vacuum);
         for (int i = 0; i < 3; i++) near(zero[i], 0, "vacuum force");
+    }
+
+    private static void weatherTestHeadingAndFade() {
+        var heading = WeatherFieldMath.phaseHeading(new net.minecraft.world.phys.Vec3(3, 12, 4));
+        near(heading.x, 0.6, "phase heading X normalization");
+        near(heading.y, 0.0, "phase heading stays horizontal");
+        near(heading.z, 0.8, "phase heading Z normalization");
+        var fallback = WeatherFieldMath.phaseHeading(net.minecraft.world.phys.Vec3.ZERO);
+        near(fallback.x, 0.0, "invalid heading fallback X");
+        near(fallback.z, 1.0, "invalid heading fallback Z");
+        near(WeatherFieldMath.phaseStrength(0.0, 15.0, 3.0), 0.0, "phase starts calm");
+        near(WeatherFieldMath.phaseStrength(1.5, 15.0, 3.0), 0.5, "phase fade uses smoothstep midpoint");
+        near(WeatherFieldMath.phaseStrength(3.0, 15.0, 3.0), 1.0, "phase reaches full wind after fade");
+        near(WeatherFieldMath.phaseStrength(15.0, 15.0, 3.0), 0.0, "phase ends calm");
+    }
+
+    private static void worldAndSubLevelProbeCoordinates() {
+        var pose = new dev.ryanhcode.sable.companion.math.Pose3d(
+            new org.joml.Vector3d(120.0, 24.0, -80.0),
+            new org.joml.Quaterniond().rotationY(Math.PI / 2.0),
+            new org.joml.Vector3d(0.0, 0.0, 0.0),
+            new org.joml.Vector3d(1.0, 1.0, 1.0)
+        );
+        var localPoint = new net.minecraft.world.phys.Vec3(3.5, 12.0, -7.25);
+        var worldPoint = WindSamplePosition.toWorldFromSubLevel(pose, localPoint);
+        var recoveredLocal = WindSamplePosition.toSubLevelLocal(pose, worldPoint);
+        near(recoveredLocal.x, localPoint.x, "plot probe inverse X");
+        near(recoveredLocal.y, localPoint.y, "plot probe inverse Y");
+        near(recoveredLocal.z, localPoint.z, "plot probe inverse Z");
+        require(worldPoint.distanceToSqr(localPoint) > 1.0, "transformed sample is distinct from plot-local point");
+
+        // LevelPlot's center is a storage-coordinate origin offset already handled
+        // by its embedded accessor. The inverse logical pose itself returns absolute
+        // storage coordinates, so the probe must not add this nonzero center again.
+        var plotCenter = new net.minecraft.core.BlockPos(2048, 64, -2048);
+        var absoluteStorage = plotCenter.offset(17, 23, -31);
+        var absolutePoint = new net.minecraft.world.phys.Vec3(
+            absoluteStorage.getX() + 0.25, absoluteStorage.getY() + 0.75, absoluteStorage.getZ() + 0.5);
+        var worldStoragePoint = WindSamplePosition.toWorldFromSubLevel(pose, absolutePoint);
+        var probedStorageBlock = WindSamplePosition.storageBlockPos(pose, worldStoragePoint);
+        require(probedStorageBlock.equals(absoluteStorage), "plot probe keeps absolute storage coordinates");
+        require(!probedStorageBlock.equals(absoluteStorage.offset(plotCenter)),
+            "nonzero plot center must not be applied twice");
     }
 
     private static void near(double actual, double expected, String message) {

@@ -18,15 +18,18 @@ public final class PMWeatherAeronautics {
     public PMWeatherAeronautics(final IEventBus modBus, final ModContainer modContainer) {
         PMWeatherForceGroups.register(modBus);
         modBus.addListener(WindMonitorNetwork::registerPayloads);
+        modBus.addListener(ParticleWindNetwork::registerPayloads);
         migrateAdaptiveBatchConfigTo090bIfNeeded();
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+        modContainer.registerConfig(ModConfig.Type.CLIENT, ParticleWindConfig.SPEC);
         // Sable fires this once for each physics sub-step, which is the right time to add impulses.
         SableEventPlatform.INSTANCE.onPhysicsTick(WeatherForceApplier::onSablePrePhysicsTick);
-        SableEventPlatform.INSTANCE.onPostPhysicsTick(ForceDiagnostics::afterPhysics);
+        AeroObserver.install(modContainer);
         AerowindTest.registerEvents();
-        NeoForge.EVENT_BUS.addListener(DebugWindCommand::register);
-        NeoForge.EVENT_BUS.addListener(DebugWindCommand::onServerTick);
-        NeoForge.EVENT_BUS.addListener(ForceDiagnostics::serverTick);
+        NeoForge.EVENT_BUS.addListener(WindMonitorNetwork::onServerStopping);
+        NeoForge.EVENT_BUS.addListener(ParticleWindNetwork::onServerTickPost);
+        NeoForge.EVENT_BUS.addListener(ParticleWindNetwork::onServerStopping);
+        NeoForge.EVENT_BUS.addListener(ParticleWindNetwork::onPlayerLoggedOut);
         NeoForge.EVENT_BUS.addListener(PMWeatherAeronautics::onLevelUnload);
         NeoForge.EVENT_BUS.addListener(PMWeatherAeronautics::onServerStopped);
     }
@@ -88,13 +91,12 @@ public final class PMWeatherAeronautics {
     private static void onLevelUnload(net.neoforged.neoforge.event.level.LevelEvent.Unload event) {
         if (event.getLevel() instanceof net.minecraft.server.level.ServerLevel) {
             clearPhysicsCaches();
-            WindDebugFile.clearSession();
+            AeroObserver.clearSession();
         }
     }
     private static void onServerStopped(net.neoforged.neoforge.event.server.ServerStoppedEvent event) {
         clearPhysicsCaches();
-        DebugWindCommand.clearSession();
-        WindDebugFile.clearSession();
+        AeroObserver.clearSession();
     }
 
 }

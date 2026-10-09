@@ -7,12 +7,19 @@
     "BlockSubLevelLiftProviderMixin",
     "SubLevelPhysicsSystemWindBatchMixin",
     "LevelPlotAeroCacheMixin",
-    "RigidBodyDiagnosticsMixin",
+    "SableBuiltinWindMixin",
     "OffroadWheelDiagnosticsMixin",
     "OffroadTerrainCastResultMixin",
-    "NoHorizonTrackContactMixin"
+    "NoHorizonTrackContactMixin",
+    "NativeStormVectorMixin"
+  ],
+  "client": [
+    "ParticleWindAccessor",
+    "ParticleEngineWindMixin",
+    "OffroadWheelVisualMixin"
   ],
   "injectors": {
     "defaultRequire": 0
-  }
+  },
+  "plugin": "com.axes.pmweather_aeronautics.mixin.IntegrationMixinPlugin"
 }

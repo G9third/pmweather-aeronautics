@@ -4,6 +4,7 @@ import datetime
 import hashlib
 import json
 import zipfile
+import argparse
 
 root = Path(__file__).resolve().parents[1]
 fixed_files = {
@@ -13,8 +14,9 @@ fixed_files = {
     'gradle/wrapper/gradle-wrapper.properties',
     'libs/DEPENDENCIES.json', 'libs/README.md',
     'docs/BUILD-SUMMARY.md', 'docs/EXTERNAL-API.md', 'docs/RELEASE-1.0.md',
-    'docs/WHEEL-CONTACT-API.md',
+    'docs/WHEEL-CONTACT-API.md', 'docs/NATIVE-WIND-INTEGRATION.md', 'THIRD_PARTY_NOTICES.md',
     'tools/fetch_compile_dependencies.py', 'tools/package_source.py',
+    'tools/ParticleCandidateSetRegression.java', 'tools/ParticleWindBudgetRegression.java',
     'src/test/java/com/axes/pmweather_aeronautics/ExternalApiChecks.java',
 }
 paths = {root / name for name in fixed_files}
@@ -32,14 +34,20 @@ manifest = {
     'sha256': {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths},
 }
 (root/'SOURCE-MANIFEST.json').write_text(json.dumps(manifest, indent=2)+'\n', encoding='utf-8')
-output = root.parent / (root.name+'.zip')
+parser = argparse.ArgumentParser()
+parser.add_argument('--output', type=Path)
+parser.add_argument('--archive-root', default=root.name)
+args = parser.parse_args()
+output = args.output or root.parent / (root.name+'.zip')
+output.parent.mkdir(parents=True, exist_ok=True)
+archive_root = args.archive_root
 with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
     for p in paths + [root/'SOURCE-MANIFEST.json']:
-        archive.write(p, root.name+'/'+p.relative_to(root).as_posix())
+        archive.write(p, archive_root+'/' + p.relative_to(root).as_posix())
 with zipfile.ZipFile(output) as archive:
     assert archive.testzip() is None
-    stored = json.loads(archive.read(root.name+'/SOURCE-MANIFEST.json'))
+    stored = json.loads(archive.read(archive_root+'/SOURCE-MANIFEST.json'))
     for name, digest in stored['sha256'].items():
-        assert hashlib.sha256(archive.read(root.name+'/'+name)).hexdigest() == digest, name
+        assert hashlib.sha256(archive.read(archive_root+'/' + name)).hexdigest() == digest, name
 print(output)
 print(f'{output.stat().st_size:,} bytes; archive integrity and all manifest hashes verified')

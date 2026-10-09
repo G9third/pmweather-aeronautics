@@ -1,6 +1,6 @@
 package com.axes.pmweather_aeronautics.mixin;
 
-import com.axes.pmweather_aeronautics.ForceDiagnostics;
+import com.axes.pmweather_aeronautics.AeroObserver;
 import com.axes.pmweather_aeronautics.OffroadWheelContactAdapter;
 import dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle;
 import dev.ryanhcode.sable.companion.math.Pose3dc;
@@ -53,17 +53,17 @@ public abstract class OffroadWheelDiagnosticsMixin {
     private void pmaero$force(ServerSubLevel body, RigidBodyHandle handle, double dt, CallbackInfo ci) {
         pmaero$submitted = true;
         OffroadWheelContactAdapter.submitted(this, body, pmaero$contactSnapshot, queuedForce);
-        if (ForceDiagnostics.enabled()) ForceDiagnostics.wheel(this, body, dt, true);
+        if (AeroObserver.enabled()) AeroObserver.wheel(this, body, dt, true);
     }
 
     @Inject(method = "sable$physicsTick", at = @At("RETURN"), require = 0)
     private void pmaero$end(ServerSubLevel body, RigidBodyHandle handle, double dt, CallbackInfo ci) {
-        if (ForceDiagnostics.enabled() && !pmaero$submitted) ForceDiagnostics.wheel(this, body, dt, false);
+        if (AeroObserver.enabled() && !pmaero$submitted) AeroObserver.wheel(this, body, dt, false);
         OffroadWheelContactAdapter.end();
     }
 
     @Inject(method = "computeMaxExtensionToTerrain", at = @At("RETURN"), require = 0)
     private void pmaero$terrain(Vector3dc direction, Pose3dc pose, CallbackInfoReturnable<?> ci) {
-        if (ForceDiagnostics.enabled()) ForceDiagnostics.wheelTerrain(this, ci.getReturnValue());
+        if (AeroObserver.enabled()) AeroObserver.wheelTerrain(this, ci.getReturnValue());
     }
 }

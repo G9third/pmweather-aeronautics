@@ -7,7 +7,7 @@ modId = "${mod_id}"
 version = "${mod_version}"
 displayName = "${mod_name}"
 authors = "G9third"
-description = '''Source-native PMWeather XYZ wind for Sable/Create Aeronautics, plus generic caller-buffer body pressure and virtual lifting-surface APIs for external rigid-body owners.'''
+description = '''PMWeather XYZ wind for Sable/Create Aeronautics, plus generic caller-buffer body pressure and virtual lifting-surface APIs for external rigid-body owners.'''
 
 [[mixins]]
 config = "pmweather_aeronautics.mixins.json"
@@ -36,7 +36,7 @@ side = "BOTH"
 [[dependencies.${mod_id}]]
 modId = "pmweather"
 type = "required"
-versionRange = "[0.17.14,)"
+versionRange = "[0.17.14,0.17.17)"
 ordering = "AFTER"
 side = "BOTH"
 

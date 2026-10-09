@@ -42,9 +42,11 @@ neoForge {
 }
 
 dependencies {
-    compileOnly files('libs/pmweather-1.21.1-0.17.14-alpha.jar')
+    compileOnly files('libs/pmweather-1.21.1-0.17.16-alpha.jar')
     compileOnly files('libs/sable-neoforge-1.21.1-2.0.5.jar')
     compileOnly files('libs/sable-companion-common-1.21.1-1.6.0.jar')
+    testRuntimeOnly files('libs/sable-neoforge-1.21.1-2.0.5.jar',
+        'libs/sable-companion-common-1.21.1-1.6.0.jar')
 }
 
 tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
@@ -53,6 +55,18 @@ tasks.register('verifyExternalApi', JavaExec) {
     dependsOn tasks.named('testClasses')
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'com.axes.pmweather_aeronautics.ExternalApiChecks'
+}
+sourceSets.test.java.srcDir 'tools'
+sourceSets.test.compileClasspath += sourceSets.main.compileClasspath
+sourceSets.test.runtimeClasspath += sourceSets.main.compileClasspath
+
+['ParticleCandidateSetRegression', 'ParticleWindBudgetRegression'].each { regression ->
+    tasks.register("verify${regression}", JavaExec) {
+        dependsOn tasks.named('testClasses')
+        classpath = sourceSets.test.runtimeClasspath
+        mainClass = "com.axes.pmweather_aeronautics.${regression}"
+    }
+    tasks.named('check') { dependsOn tasks.named("verify${regression}") }
 }
 // ExternalApiChecks is a deliberately dependency-free executable assertion
 // program, invoked by verifyExternalApi below. It is not a JUnit/TestNG suite.
@@ -72,4 +86,57 @@ processResources {
     filesMatching('META-INF/neoforge.mods.toml') {
         expand inputs.properties
     }
+}
+
+// Diagnostics are compiled only into the private development artifact.
+sourceSets {
+    dev {
+        java.setSrcDirs(['src/dev/java'])
+        resources.setSrcDirs(['src/dev/resources'])
+        compileClasspath += sourceSets.main.output + configurations.compileClasspath
+        runtimeClasspath += sourceSets.main.output + configurations.runtimeClasspath
+    }
+}
+tasks.register('jarDev', Jar) {
+    dependsOn tasks.named('classes'), tasks.named('devClasses')
+    archiveClassifier = 'dev'
+    from(sourceSets.main.output) { exclude 'META-INF/neoforge.mods.toml' }
+    from sourceSets.dev.output
+    from('src/main/resources/META-INF/neoforge.mods.toml') {
+        into 'META-INF'
+        expand mod_id: mod_id, mod_name: mod_name, mod_version: mod_version,
+            minecraft_version: minecraft_version, neoforge_version: neoforge_version, sable_version: sable_version
+        filter { line -> line == 'config = "pmweather_aeronautics.mixins.json"' ?
+            line + '\n\n[[mixins]]\nconfig = "pmweather_aeronautics.dev.mixins.json"' : line }
+    }
+}
+
+// Identify same-version rebuilds by the exact gameplay source snapshot.
+def gameplayDigest = java.security.MessageDigest.getInstance('SHA-256')
+fileTree('src/main').files.findAll { it.isFile() }.sort {
+    project.relativePath(it).replace('\\', '/')
+}.each { sourceFile ->
+    gameplayDigest.update(project.relativePath(sourceFile).replace('\\', '/').getBytes('UTF-8'))
+    gameplayDigest.update((byte) 0)
+    gameplayDigest.update(sourceFile.bytes)
+}
+def gameplaySourceSha256 = gameplayDigest.digest().encodeHex().toString()
+tasks.named('jar', Jar).configure {
+    manifest { attributes 'Gameplay-Source-SHA256': gameplaySourceSha256 }
+}
+tasks.named('jarDev', Jar).configure {
+    manifest { attributes 'Gameplay-Source-SHA256': gameplaySourceSha256 }
+    doFirst {
+        if (!file('src/dev/java').isDirectory())
+            throw new GradleException('Private development source is not included in the public source archive.')
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    from(files('LICENSE', 'THIRD_PARTY_NOTICES.md')) { into 'META-INF/licenses/pmweather_aeronautics' }
+    manifest { attributes 'Implementation-Version': project.version, 'PMAero-Wind-Revision': '3' }
+}
+tasks.named('jarDev', Jar).configure {
+    from(files('LICENSE', 'THIRD_PARTY_NOTICES.md')) { into 'META-INF/licenses/pmweather_aeronautics' }
+    manifest { attributes 'Implementation-Version': project.version, 'PMAero-Wind-Revision': '3' }
 }

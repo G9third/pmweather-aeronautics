@@ -28,7 +28,7 @@ public abstract class BlockSubLevelLiftProviderMixin {
                     value = "INVOKE",
                     target = "Ldev/ryanhcode/sable/api/block/BlockSubLevelLiftProvider;sable$contributeLiftAndDrag(Ldev/ryanhcode/sable/api/block/BlockSubLevelLiftProvider$LiftProviderContext;Ldev/ryanhcode/sable/sublevel/ServerSubLevel;Ldev/ryanhcode/sable/companion/math/Pose3d;DLorg/joml/Vector3dc;Lorg/joml/Vector3dc;Lorg/joml/Vector3d;Lorg/joml/Vector3d;Ldev/ryanhcode/sable/api/block/BlockSubLevelLiftProvider$LiftProviderGroup;)V"
             ),
-            require = 0
+            require = 1
     )
     private void pmweather_aeronautics$applyWindBeforeLiftAndDrag(
             final BlockSubLevelLiftProvider provider,

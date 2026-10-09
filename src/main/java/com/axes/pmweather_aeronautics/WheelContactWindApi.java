@@ -37,7 +37,7 @@ public final class WheelContactWindApi {
                                                final double signedNormalImpulse,
                                                final double friction,
                                                final Vector3dc nativeCombinedImpulse) {
-        return WeatherForceApplier.recordWheelContactImpulse(
+        final boolean accepted = WeatherForceApplier.recordWheelContactImpulse(
                 body,
                 contact,
                 bodyLocalPosition,
@@ -46,5 +46,7 @@ public final class WheelContactWindApi {
                 friction,
                 nativeCombinedImpulse
         );
+        if (body != null) IntegrationHealth.contact(body.getLevel().getServer().getTickCount(), accepted);
+        return accepted;
     }
 }

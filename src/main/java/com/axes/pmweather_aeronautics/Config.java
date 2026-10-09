@@ -136,12 +136,12 @@ public final class Config {
             .defineInRange("bodySurfaceProbeOffset", 0.015625D, 0.001D, 0.0625D);
     static {
         BUILDER.pop();
-        BUILDER.push("debug");
+        BUILDER.push("compatibility");
     }
-    public static final ModConfigSpec.BooleanValue DEBUG_LOGGING = BUILDER
-            .comment("Log sampled wind and impulses occasionally. Very noisy when enabled.")
-            .translation("pmweather_aeronautics.configuration.debugLogging")
-            .define("debugLogging", false);
+    public static final ModConfigSpec.BooleanValue SUPPRESS_BUILTIN_SABLE_WIND = BUILDER
+            .comment("Skip PMWeather's built-in Sable wind and inertia force callback while PMWeather Aeronautics is installed. This leaves PMWeather's weather and wind engine active. Set false to restore that separate Sable force callback.")
+            .translation("pmweather_aeronautics.configuration.suppressBuiltinSableWind")
+            .define("suppressBuiltinSableWind", true);
     static {
         BUILDER.pop();
     }
@@ -229,8 +229,8 @@ public final class Config {
     public static double bodySurfaceProbeOffset() {
         return doubleValue(BODY_SURFACE_PROBE_OFFSET, 0.015625D);
     }
-    public static boolean debugLogging() {
-        return booleanValue(DEBUG_LOGGING, false);
+    public static boolean suppressBuiltinSableWind() {
+        return booleanValue(SUPPRESS_BUILTIN_SABLE_WIND, true);
     }
     private static boolean booleanValue(final ModConfigSpec.BooleanValue value, final boolean fallback) {
         final Object raw = value.get();

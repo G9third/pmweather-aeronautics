@@ -10,6 +10,7 @@ import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
@@ -47,6 +48,8 @@ public final class LiveWindMonitor {
     private static long lastAcceptedRequestId = Long.MIN_VALUE;
     private static String testPhase = "", testProgress = "";
     private static long testReceiptNanos;
+    private static volatile Boolean immersiveVehiclesLoaded;
+    private static volatile Boolean pmivMonitorCapability;
 
     /** Optional development addons can put their server scenario beside the wind reading. */
     public static void setTestStatus(String phase, String progress) {
@@ -59,7 +62,28 @@ public final class LiveWindMonitor {
     }
 
     private static boolean pmivOwnsMonitor() {
-        return net.neoforged.fml.ModList.get().isLoaded("pmweather_iv");
+        Boolean cached = pmivMonitorCapability;
+        if (cached != null) return cached;
+        synchronized (LiveWindMonitor.class) {
+            cached = pmivMonitorCapability;
+            if (cached != null) return cached;
+            boolean capable = false;
+            if (net.neoforged.fml.ModList.get().isLoaded("pmweather_iv")) {
+                try {
+                    Class<?> monitor = Class.forName("com.g9third.pmweatheriv.client.ClientWindMonitor", false,
+                        LiveWindMonitor.class.getClassLoader());
+                    monitor.getMethod("registerCommands", RegisterClientCommandsEvent.class);
+                    monitor.getMethod("registerGuiLayer", RegisterGuiLayersEvent.class);
+                    monitor.getMethod("onClientTick", ClientTickEvent.Post.class);
+                    monitor.getMethod("setTestStatus", String.class, String.class);
+                    capable = true;
+                } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+                    // Older PMIV releases do not own the public wind monitor yet.
+                }
+            }
+            pmivMonitorCapability = capable;
+            return capable;
+        }
     }
 
     public static void registerCommands(RegisterClientCommandsEvent event) {
@@ -167,6 +191,7 @@ public final class LiveWindMonitor {
         pendingReportId = Long.MIN_VALUE;
         lastReceiptTick = Long.MIN_VALUE;
         WindMonitorNetwork.clearClientReading();
+        WindMonitorNetwork.clearClientTestField();
         testPhase = testProgress = "";
     }
 
@@ -306,7 +331,7 @@ public final class LiveWindMonitor {
             ? "WIND  calm"
             : String.format(Locale.ROOT, "WIND  %.1f mph  FROM %s", reading.totalSpeedMph(), reading.fromCardinal());
         String vertical = compactVerticalLabel(reading.effectiveMph().y());
-        String referenceLabel = reference.aircraftRelative() ? "AIR" : "VIEW";
+        String referenceLabel = reference.vehicleRelative() ? "VEH" : "VIEW";
         String sourceSuffix = reading.authoritativeServer() ? "" : "  LOCAL";
         String secondary = reading.calm()
             ? referenceLabel + sourceSuffix
@@ -328,31 +353,46 @@ public final class LiveWindMonitor {
 
     /** IV's rider camera can turn independently; use the seated vehicle's heading when available. */
     private static HorizontalReference horizontalReference(Player player) {
-        try {
+        if (isImmersiveVehiclesLoaded()) try {
             Class<?> manager = Class.forName("minecrafttransportsimulator.mcinterface.InterfaceManager");
             Object clientInterface = manager.getField("clientInterface").get(null);
-            if (clientInterface == null) return new HorizontalReference(player.getYRot(), false);
-            Object wrapper = clientInterface.getClass().getMethod("getClientPlayer").invoke(clientInterface);
-            if (wrapper == null) return new HorizontalReference(player.getYRot(), false);
-            Object riding = wrapper.getClass().getMethod("getEntityRiding").invoke(wrapper);
-            if (riding != null && riding.getClass().getSimpleName().equals("PartSeat")) {
-                Object vehicle = riding.getClass().getField("vehicleOn").get(riding);
-                if (vehicle != null) {
-                    Object definition = vehicle.getClass().getField("definition").get(vehicle);
-                    Object motorized = definition.getClass().getField("motorized").get(definition);
-                    if (motorized == null || !motorized.getClass().getField("isAircraft").getBoolean(motorized)) {
-                        return new HorizontalReference(player.getYRot(), false);
+            if (clientInterface != null) {
+                Object wrapper = clientInterface.getClass().getMethod("getClientPlayer").invoke(clientInterface);
+                if (wrapper != null) {
+                    Object riding = wrapper.getClass().getMethod("getEntityRiding").invoke(wrapper);
+                    if (riding != null && riding.getClass().getSimpleName().equals("PartSeat")) {
+                        Object vehicle = riding.getClass().getField("vehicleOn").get(riding);
+                        if (vehicle != null) {
+                            Object rotation = vehicle.getClass().getField("orientation").get(vehicle);
+                            Object angles = rotation.getClass().getField("angles").get(rotation);
+                            double yaw = angles.getClass().getField("y").getDouble(angles);
+                            if (Double.isFinite(yaw)) return new HorizontalReference(-yaw, true);
+                        }
                     }
-                    Object rotation = vehicle.getClass().getField("orientation").get(vehicle);
-                    Object angles = rotation.getClass().getField("angles").get(rotation);
-                    double yaw = angles.getClass().getField("y").getDouble(angles);
-                    if (Double.isFinite(yaw)) return new HorizontalReference(-yaw, true);
                 }
             }
         } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
             // PMAero can run without IV; fall back to the rider's camera heading.
         }
+        Vec3 structureForward = WindSamplePosition.structureForward(player);
+        if (structureForward != null) {
+            double yaw = Math.toDegrees(Math.atan2(-structureForward.x, structureForward.z));
+            if (Double.isFinite(yaw)) return new HorizontalReference(yaw, true);
+        }
         return new HorizontalReference(player.getYRot(), false);
+    }
+
+    private static boolean isImmersiveVehiclesLoaded() {
+        Boolean cached = immersiveVehiclesLoaded;
+        if (cached != null) return cached;
+        synchronized (LiveWindMonitor.class) {
+            cached = immersiveVehiclesLoaded;
+            if (cached == null) {
+                cached = net.neoforged.fml.ModList.get().isLoaded("mts");
+                immersiveVehiclesLoaded = cached;
+            }
+            return cached;
+        }
     }
 
     private static RelativeDirection relativeToPlayer(WindVector windMph, double playerYawDegrees) {
@@ -477,7 +517,7 @@ public final class LiveWindMonitor {
         }
     }
 
-    private record HorizontalReference(double yawDegrees, boolean aircraftRelative) {}
+    private record HorizontalReference(double yawDegrees, boolean vehicleRelative) {}
 
     private record RelativeDirection(double right, double forward) {
         private static final RelativeDirection ZERO = new RelativeDirection(0.0, 0.0);

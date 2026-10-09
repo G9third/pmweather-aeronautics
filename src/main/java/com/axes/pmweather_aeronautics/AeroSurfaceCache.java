@@ -405,7 +405,7 @@ public final class AeroSurfaceCache {
                 point,
                 normal,
                 area,
-                AeroPatchVisualizer.hasViewers()
+                AeroObserver.hasPatchViewers()
                         ? List.of(new PatchFootprint(
                                 key.role(),
                                 key.plane(),

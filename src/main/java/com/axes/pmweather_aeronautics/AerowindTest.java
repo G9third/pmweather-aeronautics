@@ -18,8 +18,10 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 /** Temporary wind profiles for repeatable Aeronautics and PMIV vehicle checks. */
 public final class AerowindTest {
     private static final double MAX_RADIUS_SQUARED = 256.0 * 256.0;
+    private static final int CLIENT_FIELD_STALE_TICKS = 40;
     private static Session session;
     private static volatile Field active;
+    private static volatile ClientField clientField;
 
     private AerowindTest() {}
 
@@ -40,6 +42,66 @@ public final class AerowindTest {
                 field.phaseTicks / 20.0, field.fadeSeconds));
     }
 
+    /** Client-side analytic counterpart for particles and cached wind consumers. */
+    public static Vec3 sampleClient(Level level, Vec3 point) {
+        ClientField field = clientField;
+        if (field == null || level == null || !level.isClientSide || !finite(point)
+            || !level.dimension().location().toString().equals(field.dimension())) return null;
+        long sinceReceipt = level.getGameTime() - field.clientReceiveTick();
+        if (sinceReceipt < 0L || sinceReceipt > CLIENT_FIELD_STALE_TICKS) {
+            if (clientField == field) clientField = null;
+            return null;
+        }
+        double elapsedTicks = Math.max(0.0, field.elapsedTicks() + sinceReceipt);
+        double elapsedSeconds = elapsedTicks / 20.0;
+        Vec3 origin = field.origin().add(field.originPerTick().scale(Math.min(sinceReceipt, 10L)));
+        if (point.distanceToSqr(origin) > MAX_RADIUS_SQUARED) return null;
+        double phaseSeconds = field.phaseTicks() / 20.0;
+        return field.scenario().sample(point.subtract(origin), field.forward(), elapsedSeconds, phaseSeconds)
+            .scale(WeatherFieldMath.phaseStrength(elapsedSeconds, phaseSeconds, field.fadeTicks() / 20.0));
+    }
+
+    /** Install a bounded network snapshot on clients; the server never calls this method. */
+    public static void acceptClientField(WindMonitorNetwork.TestFieldPayload payload, Level level) {
+        if (payload == null || !payload.active() || level == null || !level.isClientSide
+            || !level.dimension().location().toString().equals(payload.dimension())) {
+            clearClientField();
+            return;
+        }
+        var scenarios = payload.stress() ? WindScenario.STRESS : WindScenario.FLIGHT;
+        if (payload.scenarioIndex() < 0 || payload.scenarioIndex() >= scenarios.size()
+            || payload.phaseTicks() <= 0 || payload.elapsedTicks() < 0) {
+            clearClientField();
+            return;
+        }
+        Vec3 origin = new Vec3(payload.originX(), payload.originY(), payload.originZ());
+        Vec3 forward = WeatherFieldMath.phaseHeading(new Vec3(payload.forwardX(), 0.0, payload.forwardZ()));
+        if (!finite(origin) || !finite(forward)) {
+            clearClientField();
+            return;
+        }
+        ClientField previous = clientField;
+        Vec3 originPerTick = Vec3.ZERO;
+        if (previous != null && previous.dimension().equals(payload.dimension())
+            && previous.stress() == payload.stress() && previous.phaseIndex() == payload.scenarioIndex()) {
+            long serverTicks = payload.serverGameTick() - previous.serverGameTick();
+            if (serverTicks > 0L && serverTicks <= 40L) {
+                originPerTick = origin.subtract(previous.origin()).scale(1.0 / serverTicks);
+            }
+        }
+        clientField = new ClientField(payload.dimension(), payload.stress(), payload.scenarioIndex(), origin,
+            originPerTick, forward, scenarios.get(payload.scenarioIndex()), payload.elapsedTicks(),
+            payload.phaseTicks(), payload.fadeTicks(), payload.serverGameTick(), level.getGameTime());
+    }
+
+    public static void clearClientField() {
+        clientField = null;
+    }
+
+    private static boolean finite(Vec3 vector) {
+        return vector != null && Double.isFinite(vector.x) && Double.isFinite(vector.y) && Double.isFinite(vector.z);
+    }
+
     private static void registerCommands(RegisterCommandsEvent event) {
         var root = Commands.literal("aerowind").requires(source -> source.hasPermission(2));
         var test = Commands.literal("test").executes(c -> status(c.getSource()));
@@ -55,7 +117,8 @@ public final class AerowindTest {
         test.then(Commands.literal("status").executes(c -> status(c.getSource())));
         test.then(Commands.literal("next").executes(c -> {
             if (session == null) return fail(c.getSource(), "No wind test is active.");
-            if (advance()) announcePhase();
+            ServerPlayer owner = session.level.getServer().getPlayerList().getPlayer(session.owner);
+            if (advance(owner)) announcePhase();
             return 1;
         }));
         test.then(Commands.literal("list").executes(c -> list(c.getSource(), false)));
@@ -71,17 +134,14 @@ public final class AerowindTest {
         if (secondsPerPhase * phaseCount > 300)
             return fail(source, "The complete test must fit within five minutes; reduce secondsPerPhase.");
         stop("replaced by a new test");
-        session = new Session(player.serverLevel(), player.getUUID(), player.position(), heading(player), secondsPerPhase, stress);
+        WindSamplePosition.RiderSample rider = WindSamplePosition.resolve(player);
+        session = new Session(player.serverLevel(), player.getUUID(),
+            rider.worldPoint(), rider.forward(), secondsPerPhase, stress);
         updateField();
         announce("Started " + (stress ? "stress" : "flight") + " sequence (" + clock(session.totalSeconds())
-            + "). Use /aerowind live on to show wind and phase; /aerowind test stop to end.");
+            + "). Use /aerowind live on to show wind; /aerowind test stop to end.");
         announcePhase();
         return 1;
-    }
-
-    private static Vec3 heading(ServerPlayer player) {
-        double yaw = Math.toRadians(player.getYRot());
-        return new Vec3(-Math.sin(yaw), 0, Math.cos(yaw));
     }
 
     private static void tick(ServerTickEvent.Pre event) {
@@ -89,21 +149,28 @@ public final class AerowindTest {
         if (s == null || event.getServer() != s.level.getServer()) return;
         ServerPlayer owner = event.getServer().getPlayerList().getPlayer(s.owner);
         if (owner == null || owner.serverLevel() != s.level) { stop("operator left the test area"); return; }
+        s.origin = WindSamplePosition.worldPoint(owner);
         if (++s.tick >= s.phaseTicks) {
-            if (advance()) announcePhase();
+            if (advance(owner)) announcePhase();
             return;
         }
         updateField();
         if (s.tick % 20 == 0) sendStatus();
+        if (s.tick % 10 == 0) sendClientFields();
     }
 
-    private static boolean advance() {
+    private static boolean advance(ServerPlayer owner) {
         if (session.phase + 1 >= session.scenarios.size()) {
             stop("test completed");
             return false;
         }
         session.phase++;
         session.tick = 0;
+        if (owner != null && owner.serverLevel() == session.level) {
+            WindSamplePosition.RiderSample rider = WindSamplePosition.resolve(owner);
+            session.origin = rider.worldPoint();
+            session.forward = WeatherFieldMath.phaseHeading(rider.forward());
+        }
         updateField();
         return true;
     }
@@ -118,8 +185,9 @@ public final class AerowindTest {
         Session s = session;
         if (s == null) return;
         announce("Phase " + (s.phase + 1) + "/" + s.scenarios.size() + ": "
-            + s.scenario().description() + " (" + (s.phaseTicks / 20) + "s).");
+            + s.scenario().label() + " (" + (s.phaseTicks / 20) + "s).");
         sendStatus();
+        sendClientFields();
     }
 
     private static void sendStatus() {
@@ -128,10 +196,35 @@ public final class AerowindTest {
         String phase = "TEST " + (s.phase + 1) + "/" + s.scenarios.size() + "  " + s.scenario().label();
         String progress = clock((s.phase * s.phaseTicks + s.tick) / 20) + "/" + clock(s.totalSeconds())
             + "  Next: " + (s.phase + 1 < s.scenarios.size() ? s.scenarios.get(s.phase + 1).label() : "finish");
+        Vec3 origin = s.origin;
         for (ServerPlayer player : s.level.players()) {
-            if (player.position().distanceToSqr(s.origin) <= MAX_RADIUS_SQUARED || player.getUUID().equals(s.owner))
+            if (WindSamplePosition.worldPoint(player).distanceToSqr(origin) <= MAX_RADIUS_SQUARED
+                || player.getUUID().equals(s.owner))
                 WindMonitorNetwork.sendTestStatus(player, phase, progress);
         }
+    }
+
+    private static void sendClientFields() {
+        Session s = session;
+        if (s == null) return;
+        String dimension = s.level.dimension().location().toString();
+        int fadeTicks = (int) Math.round(Math.min(3.0, (s.phaseTicks / 20.0) / 4.0) * 20.0);
+        for (ServerPlayer player : s.level.players()) {
+            boolean nearby = WindSamplePosition.worldPoint(player).distanceToSqr(s.origin) <= MAX_RADIUS_SQUARED;
+            WindMonitorNetwork.sendTestField(player, new WindMonitorNetwork.TestFieldPayload(
+                nearby || player.getUUID().equals(s.owner), dimension, s.stress, s.phase,
+                s.origin.x, s.origin.y, s.origin.z, s.forward.x, s.forward.z,
+                s.tick, s.phaseTicks, fadeTicks, s.level.getGameTime()
+            ));
+        }
+    }
+
+    private static void clearClientFields(Session old) {
+        String dimension = old.level.dimension().location().toString();
+        WindMonitorNetwork.TestFieldPayload stopped = new WindMonitorNetwork.TestFieldPayload(
+            false, dimension, old.stress, old.phase, 0, 0, 0, 0, 1, 0, 0, 0, old.level.getGameTime()
+        );
+        for (ServerPlayer player : old.level.players()) WindMonitorNetwork.sendTestField(player, stopped);
     }
 
     private static int status(CommandSourceStack source) {
@@ -163,6 +256,7 @@ public final class AerowindTest {
         Session old = session;
         active = null;
         if (old != null) {
+            clearClientFields(old);
             for (ServerPlayer player : old.level.players()) {
                 player.sendSystemMessage(Component.literal("[Aerowind] Wind test stopped: " + reason + "."));
                 WindMonitorNetwork.sendTestStatus(player, "", "");
@@ -178,8 +272,13 @@ public final class AerowindTest {
     private record Field(ServerLevel level, Vec3 origin, Vec3 forward, WindScenario scenario,
                          int tick, int phaseTicks, double fadeSeconds) {}
 
+    private record ClientField(String dimension, boolean stress, int phaseIndex, Vec3 origin,
+                               Vec3 originPerTick, Vec3 forward, WindScenario scenario,
+                               int elapsedTicks, int phaseTicks, int fadeTicks,
+                               long serverGameTick, long clientReceiveTick) {}
+
     private static final class Session {
-        final ServerLevel level; final UUID owner; final Vec3 origin; final Vec3 forward;
+        final ServerLevel level; final UUID owner; Vec3 origin; Vec3 forward;
         final int phaseTicks; final boolean stress; final java.util.List<WindScenario> scenarios;
         int phase; int tick;
         Session(ServerLevel level, UUID owner, Vec3 origin, Vec3 forward, int secondsPerPhase, boolean stress) {

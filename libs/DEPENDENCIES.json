@@ -2,10 +2,10 @@
   "compile_only_dependencies": [
     {
       "name": "PMWeather",
-      "version": "1.21.1-0.17.14-alpha",
-      "filename": "pmweather-1.21.1-0.17.14-alpha.jar",
-      "url": "https://cdn.modrinth.com/data/TfCsmTLI/versions/twmdjNBb/pmweather-1.21.1-0.17.14-alpha.jar",
-      "sha256": "bd6842115cb79987fa58dd1835d6300a33fe66cb14586469f1e559c65fccba17"
+      "version": "1.21.1-0.17.16-alpha",
+      "filename": "pmweather-1.21.1-0.17.16-alpha.jar",
+      "url": "https://cdn.modrinth.com/data/TfCsmTLI/versions/Qp0DIGJk/pmweather-1.21.1-0.17.16-alpha.jar",
+      "sha256": "52ee6622e43f3d1e2c8c5c6f0db0b4346efda0f29c4991caf0764b7fe2186e17"
     },
     {
       "name": "Sable NeoForge",

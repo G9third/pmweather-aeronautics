@@ -1,4 +1,4 @@
-# External PMWeather Aeronautics APIs — version 2
+# External PMWeather Aeronautics APIs - version 2
 
 All entry points are public static. Body/lift calculations use SI units and the
 caller's Cartesian frame. They do not query Minecraft, own bodies, advance position,
@@ -9,10 +9,22 @@ or add gravity. Callers must discard results when an API returns false.
 `PMWeatherWindApi.sampleAircraftAtmosphereInto(ServerLevel, double[] xyz, double[] output)`
 uses XYZ position triples and 13 output values per position, preserving the existing
 detailed atmosphere layout documented in `PMWeatherWindApi.java`. The first three
-values are source-native signed XYZ wind in mph. PMIV converts mph to m/s once.
+values are signed XYZ wind in mph: native combined X/Z and existing Y, plus the
+native supercell Y discarded by the supported combined engine. PMIV converts mph to m/s once.
 Query from the owning server tick and freeze the result for physics substeps.
 This atmosphere batch excludes discrete terrain/shelter gating as in the baseline
 aircraft atmosphere API. It does not cap or synthesize weather velocity.
+
+sampleAircraftWindInto(ServerLevel, double[] xyz, double[] output) is an additive,
+vector-only entry point with VECTOR_RESULT_STRIDE = 3. It uses caller-owned XYZ buffers
+and avoids diagnostic nearest-storm scans. PMIV requires WIND_IMPLEMENTATION_REVISION = 3;
+install its matching PMAero build even though the display version remains 1.0.
+
+Detailed slot 3 identifies an added native supercell Y contribution. It does not mean
+the full output equals an individual native tornado vector. Slot 11 is retained for
+layout compatibility but is NaN for native samples, because PMWeather exposes no
+authoritative combined influence radius. Synthetic test metadata keeps its zero/Infinity
+sentinels. Ordinary no-storm metadata keeps its NaN/-1 sentinels.
 
 ## Body
 

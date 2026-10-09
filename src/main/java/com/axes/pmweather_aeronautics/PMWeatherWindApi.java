@@ -7,11 +7,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Public source-native PMWeather 3-D wind bridge shared by Sable integrations.
+ * Public PMWeather 3-D wind bridge shared by Sable integrations.
  *
  * <p>The returned vectors remain in PMWeather's mph-style units until explicitly converted with
- * {@link #toPhysicsWind(Vec3)}.  X/Y/Z are preserved together: positive Y updraft and negative Y
- * downdraft are never projected onto the horizontal plane.</p>
+ * {@link #toPhysicsWind(Vec3)}.  Native combined X/Z and existing Y are retained. Supercell tornado Y evaluated
+ * by the native engine is added separately because PMWeather 0.17.14-0.17.16 discards it.</p>
  *
  * <p>The external API is intentionally independent from PMAero's body-force tuning, sample budget,
  * temporal interpolation, mass scaling, and force caps.  A caller that already owns a same-tick
@@ -26,6 +26,7 @@ public final class PMWeatherWindApi {
 
     /** Packed detailed-result stride used by {@link #sampleRawBatchPackedMph}. */
     public static final int API_VERSION = 2;
+    public static final int WIND_IMPLEMENTATION_REVISION = 3;
     public static final int PACKED_RESULT_STRIDE = 13;
 
     private PMWeatherWindApi() {
@@ -38,6 +39,16 @@ public final class PMWeatherWindApi {
             || output.length != xyz.length / 3 * PACKED_RESULT_STRIDE || xyz == output) return false;
         for (double value : xyz) if (!Double.isFinite(value)) return false;
         return WeatherWindField.sampleAircraftInto(level, xyz, output);
+    }
+
+    /** Vector-only owner-tick API: output is XYZ triples, without diagnostic storm scans. */
+    public static final int VECTOR_RESULT_STRIDE = 3;
+    public static boolean sampleAircraftWindInto(ServerLevel level, double[] xyz, double[] output) {
+        if (output != null && output != xyz) java.util.Arrays.fill(output, 0.0D);
+        if (level == null || xyz == null || output == null || xyz.length % 3 != 0
+                || output.length != xyz.length || xyz == output) return false;
+        for (double value : xyz) if (!Double.isFinite(value)) return false;
+        return WeatherWindField.sampleAircraftVectorsInto(level, xyz, output);
     }
 
     /** Resolve one source-native 3-D wind vector in PMWeather/mph-style units. */
@@ -73,7 +84,7 @@ public final class PMWeatherWindApi {
      * per input point:
      * <pre>
      *  0..2  wind X/Y/Z mph
-     *  3     native tornado-vector contribution used (1/0)
+     *  3     native supercell vertical correction used (1/0)
      *  4     storm snapshot count
      *  5     tornadic storm snapshot count
      *  6     maximum storm stage
@@ -81,7 +92,7 @@ public final class PMWeatherWindApi {
      *  8     nearest storm stage
      *  9     nearest storm tornadic (1/0)
      * 10     nearest storm width (m)
-     * 11     nearest tornado influence radius (m)
+     * 11     reserved influence radius (NaN: not exposed by native API)
      * 12     nearest storm windspeed (mph)
      * </pre>
      */
@@ -107,23 +118,23 @@ public final class PMWeatherWindApi {
         for (int i = 0; i < samples.size(); i++) {
             final WeatherWindField.RawWindSample sample = samples.get(i);
             final int base = i * PACKED_RESULT_STRIDE;
-            final Vec3 testWind = AerowindTest.sample(level, positions.get(i));
-            final Vec3 resolvedWind = testWind == null ? sample.wind() : testWind;
-            packed[base] = resolvedWind.x;
-            packed[base + 1] = resolvedWind.y;
-            packed[base + 2] = resolvedWind.z;
-            packed[base + 3] = testWind == null && sample.nativeTornadoVectorUsed() ? 1.0D : 0.0D;
-            packed[base + 4] = testWind == null ? sample.stormSnapshotCount() : 0;
-            packed[base + 5] = testWind == null ? sample.tornadicStormSnapshotCount() : 0;
-            packed[base + 6] = testWind == null ? sample.maximumStormStage() : 0;
-            packed[base + 7] = testWind == null ? sample.nearestStormDistanceMeters() : Double.POSITIVE_INFINITY;
-            packed[base + 8] = testWind == null ? sample.nearestStormStage() : 0;
-            packed[base + 9] = testWind == null && sample.nearestStormTornadic() ? 1.0D : 0.0D;
-            packed[base + 10] = testWind == null ? sample.nearestStormWidthMeters() : 0;
-            packed[base + 11] = testWind == null ? sample.nearestStormTornadoInfluenceRadiusMeters() : 0;
-            packed[base + 12] = testWind == null ? sample.nearestStormWindspeedMph() : 0;
+            writePacked(sample, packed, base);
         }
         return packed;
+    }
+
+    static void writePacked(WeatherWindField.RawWindSample sample, double[] output, int base) {
+        output[base] = sample.wind().x; output[base + 1] = sample.wind().y; output[base + 2] = sample.wind().z;
+        output[base + 3] = sample.nativeTornadoVectorUsed() ? 1.0D : 0.0D;
+        output[base + 4] = sample.stormSnapshotCount();
+        output[base + 5] = sample.tornadicStormSnapshotCount();
+        output[base + 6] = sample.maximumStormStage();
+        output[base + 7] = sample.nearestStormDistanceMeters();
+        output[base + 8] = sample.nearestStormStage();
+        output[base + 9] = sample.nearestStormTornadic() ? 1.0D : 0.0D;
+        output[base + 10] = sample.nearestStormWidthMeters();
+        output[base + 11] = sample.nearestStormTornadoInfluenceRadiusMeters();
+        output[base + 12] = sample.nearestStormWindspeedMph();
     }
 
     /** Convert PMWeather/mph-style X/Y/Z to Sable block-per-second style X/Y/Z. */

@@ -1,4 +1,4 @@
-# Wheel-contact wind API — version 1
+# Wheel-contact wind API - version 1
 
 `com.axes.pmweather_aeronautics.WheelContactWindApi` is an optional Java hook for
 third-party Sable wheel/contact solvers. Its API version is independent of the three
@@ -29,3 +29,16 @@ the aggregate breakaway gate.
 The API cannot verify that an addon supplied a physically correct friction coefficient or
 complete native impulse. Independent integrations must audit their own call site and
 contact semantics.
+
+
+## Coverage and diagnostics
+
+Named Offroad/Tracks and No Horizon adapters are specific inspected callsites.
+Unknown or overridden wheel solvers need an adapter or this API.
+A transformed optional hook without matching callsites logs a warning once.
+Private recordings report accepted and rejected contact counts.
+
+Offroad 1.3.2's unpowered visual hook uses the native longitudinal rolling angle,
+including the wheel's radius, steering and point motion. It removes residual driven
+spin blending while coasting, without altering physical tire coefficients or forces.
+Tracks and unknown-addon visuals are not covered by this wheel-specific hook.

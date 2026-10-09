@@ -68,6 +68,7 @@ public final class OffroadWheelContactAdapter {
                           final ServerSubLevel body,
                           final Snapshot snapshot,
                           final Vector3dc originalCombinedImpulse) {
+        if (body == null) return;
         if (snapshot != null && originalCombinedImpulse != null && isFinite(originalCombinedImpulse)) {
             WheelContactWindApi.recordContactImpulse(
                     body,
@@ -78,6 +79,8 @@ public final class OffroadWheelContactAdapter {
                     snapshot.friction(),
                     originalCombinedImpulse
             );
+        } else {
+            IntegrationHealth.contact(body.getLevel().getServer().getTickCount(), false);
         }
     }
 

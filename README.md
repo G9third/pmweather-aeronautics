@@ -1,9 +1,14 @@
 # PMWeather Aeronautics 1.0
 
-PMWeather Aeronautics applies source-native signed XYZ PMWeather wind to Sable rigid
+PMWeather Aeronautics applies signed XYZ PMWeather wind to Sable rigid
 bodies, including Create: Aeronautics vehicles, and exposes versioned body-pressure and
 virtual lifting-surface APIs to compatible addons. Immersive Vehicles entities remain
 the responsibility of PMWeather-IV; this mod does not add an IV vehicle force path.
+
+Version 1.0 supports Immersive Vehicles through the separate [PMWeather-IV (PMIV) addon](https://github.com/G9third/pmweather-iv).
+PMIV 0.12.0-rc1 shares PMAero's authoritative wind HUD and weather-test system when both
+addons are installed. The [full weather-test cycle video](https://streamable.com/fomjry)
+shows the four-minute flight sequence.
 
 This 1.0 update corrects aerodynamic pressure lines of action, accounts for angular
 velocity at each pressure point when body-relative wind drag is enabled, and adds
@@ -15,10 +20,17 @@ exceeds recorded contact grip; native spring/support impulses are preserved.
 
 - Minecraft 1.21.1 and NeoForge 21.1.234 or later
 - Java 21
-- PMWeather 0.17.14 or later and Sable 2.0.5 through 2.x
+- PMWeather 0.17.14 through 0.17.16 and Sable 2.0.5 through 2.x
 - Optional wheel-contact adapters are audited for Offroad 1.3.0 and 1.3.2, Create Tracks
   1.0.1, and Aeronautics No Horizon 1.0.3
 - Aeronautics, Offroad, Tracks, and No Horizon remain separate optional mods
+
+When PMWeather is installed, PMAero suppresses PMWeather's separate built-in Sable
+wind/inertia force callback by default, avoiding duplicate Sable wind forces without editing
+PMWeather's config. PMWeather weather and wind sampling remain enabled. To restore that
+callback, set `compatibility.suppressBuiltinSableWind = false` in
+`pmweather_aeronautics-common.toml`. Removing PMAero removes the mixin, so PMWeather's
+callback runs again without changing PMWeather's saved config.
 
 The whole-body aerodynamic pressure path uses Sable rigid-body sublevels. The tire
 breakaway adapter observes the shared Offroad/Tracks `TireLike` wheel path. The No Horizon
@@ -37,9 +49,10 @@ The body `windInfluence` default and fallback remain `0.1`; `windThreshold` defa
 Use `/aerowind wind` for a wind reading and `/aerowind live on|off` to toggle the small
 live HUD. `/aerowind test start` runs the short flight sequence; use `stress`, `status`,
 `next`, `stop`, or `list` under `/aerowind test` to manage or inspect it. The default
-sequence is about three minutes and the complete test is capped at five minutes. PMIV
-uses the same test and HUD when installed, while PMAero works on its own for supported
-Sable bodies.
+sequence is four minutes and the complete test is capped at five minutes. PMIV uses the
+same test and HUD when installed, while PMAero works on its own for supported Sable bodies.
+Ambient detached-particle wind is enabled by default; it uses bounded cached samples shared
+across visible particles. Disable it in the client config under `particleWind.enabled`.
 
 ## Public APIs
 
@@ -55,10 +68,28 @@ compile-only dependencies, then build with Java 21 using `./gradlew jar`. Those 
 JARs are not embedded in the mod JAR or public source archive. Sable supplies its embedded
 Companion Common library at runtime; its extracted JAR is only a compile input.
 
-The pre-existing `ExternalApiChecks` source is included because Gradle's `check` task calls
-it. Running `./gradlew build` executes that dependency-free API check; the 1.0 release
-verification used `./gradlew jar` and did not run it.
+The current Java 21 candidate was compiled using the jar and jarDev tasks.
+No regression suite or game session was run for this candidate. Previous 1.0 helper checks
+are historical evidence, as recorded in [BUILD-SUMMARY](docs/BUILD-SUMMARY.md).
+
+The public JAR retains /aerowind live wind and the weather test. Full force recording,
+patch visualization, profiling hooks and diagnostic commands are in the separate private
+dev artifact. Public source archives omit that dev implementation.
 
 PMWeather Aeronautics source is MIT licensed; see [LICENSE](LICENSE). Third-party mod
 binaries and content-pack assets retain their own licenses and are not included in this
 source distribution.
+
+
+## Wind integration
+
+Native PMWeather owns horizontal combination and fire-whirl vertical motion.
+PMAero restores the signed supercell Y that the supported engine evaluates internally
+but discards from its combined output. It does not recreate native tornado formulas.
+Overlapping supercell Y components add; this differs numerically from older PMAero blends.
+See [native integration details](docs/NATIVE-WIND-INTEGRATION.md) and
+[third-party notices](THIRD_PARTY_NOTICES.md).
+
+Unpowered Offroad wheels use the native longitudinal rolling angle without residual
+drive-spin blending. Sideways motion does not become forward wheel rotation.
+This visual adapter is specific to the inspected Offroad path.

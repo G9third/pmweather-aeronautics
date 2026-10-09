@@ -59,7 +59,7 @@ public final class WeatherForceApplier {
      * physics substep. Calls before later sub-levels in the same substep are cheap no-ops.
      */
     public static void prepareWindBeforeLiftProviders(final SubLevelPhysicsSystem physicsSystem) {
-        ForceDiagnostics.begin(physicsSystem);
+        AeroObserver.begin(physicsSystem);
         final PreparedPhysicsStep prepared = prepareWindFrame(physicsSystem);
         if (prepared == null) {
             ACTIVE_WHEEL_STEP.remove();
@@ -206,34 +206,34 @@ public final class WeatherForceApplier {
                                             final List<WeatherWindField.WindSample> samples,
                                             final PreparedPhysicsStep prepared) {
         if (!Config.enableBodyPush()) {
-            if (ForceDiagnostics.enabled()) ForceDiagnostics.event(subLevel, "body_skipped", "reason", "body_push_disabled");
+            if (AeroObserver.enabled()) AeroObserver.event(subLevel, "body_skipped", "reason", "body_push_disabled");
             return;
         }
         if (!Double.isFinite(timeStep) || timeStep <= 0.0D) {
-            if (ForceDiagnostics.enabled()) ForceDiagnostics.event(subLevel, "body_skipped", "reason", "invalid_timestep", "dt", timeStep);
+            if (AeroObserver.enabled()) AeroObserver.event(subLevel, "body_skipped", "reason", "invalid_timestep", "dt", timeStep);
             return;
         }
         final MassData massData = subLevel.getMassTracker();
         if (massData == null || massData.isInvalid() || !isFinite(massData.getCenterOfMass())) {
-            if (ForceDiagnostics.enabled()) ForceDiagnostics.event(subLevel, "body_skipped", "reason", "invalid_mass");
+            if (AeroObserver.enabled()) AeroObserver.event(subLevel, "body_skipped", "reason", "invalid_mass");
             return;
         }
         final Pose3d pose = subLevel.logicalPose();
         final Vector3dc centerOfMassLocal = massData.getCenterOfMass();
         pose.transformPosition(centerOfMassLocal, WORLD_CENTER);
         if (samples == null || samples.isEmpty()) {
-            if (ForceDiagnostics.enabled()) ForceDiagnostics.event(subLevel, "body_skipped", "reason", "no_prepared_samples");
+            if (AeroObserver.enabled()) AeroObserver.event(subLevel, "body_skipped", "reason", "no_prepared_samples");
             return;
         }
         final RigidBodyHandle handle = physicsSystem.getPhysicsHandle(subLevel);
         if (handle == null || !handle.isValid()) {
-            if (ForceDiagnostics.enabled()) ForceDiagnostics.event(subLevel, "body_skipped", "reason", "invalid_handle");
+            if (AeroObserver.enabled()) AeroObserver.event(subLevel, "body_skipped", "reason", "invalid_handle");
             return;
         }
         handle.getLinearVelocity(LINEAR_VELOCITY);
         handle.getAngularVelocity(ANGULAR_VELOCITY);
         if (!isFinite(LINEAR_VELOCITY) || !isFinite(ANGULAR_VELOCITY)) {
-            if (ForceDiagnostics.enabled()) ForceDiagnostics.event(subLevel, "body_skipped", "reason", "invalid_velocity");
+            if (AeroObserver.enabled()) AeroObserver.event(subLevel, "body_skipped", "reason", "invalid_velocity");
             return;
         }
         LAST_NET_AERO_FORCE.zero();
@@ -258,8 +258,8 @@ public final class WeatherForceApplier {
         );
         final int appliedCenter = 0; // Kept in the debug CSV schema for backward compatibility.
         final double strongestProfileSpeed = strongestSampleSpeed(samples);
-        if (WindDebugFile.isEnabled()) {
-            WindDebugFile.recordObject(
+        if (AeroObserver.traceEnabled()) {
+            AeroObserver.recordObject(
                     subLevel.getLevel().getGameTime(),
                     String.valueOf(subLevel.getUniqueId()),
                     timeStep,
@@ -279,7 +279,7 @@ public final class WeatherForceApplier {
                     WeatherWindField.sampleStatsSnapshot()
             );
         }
-        if (Config.debugLogging() && subLevel.getLevel().getGameTime() % 100L == 0L) {
+        if (AeroObserver.summaryLoggingEnabled() && subLevel.getLevel().getGameTime() % 100L == 0L) {
             PMWeatherAeronautics.LOGGER.info(
                     "PMWeather aerodynamic wind for Sable sub-level {}: profileApplied={}, strongestProfileSpeed={}, mass={}, damping={}, profileStrength={}, areaWeightStrength={}, patchPerObjectMax={}, quadraticPressure=true, relativeBodyDrag={}",
                     subLevel.getUniqueId(), appliedProfileSamples,
@@ -409,8 +409,8 @@ public final class WeatherForceApplier {
             }
             correctionTotal.applyImpulseAtPoint(massData, contact.position(), correction);
             windGroup.recordPointForce(contact.position(), correction);
-            if (ForceDiagnostics.enabled()) {
-                ForceDiagnostics.event(subLevel, "wheel_wind_breakaway", "windDemand", projectedWindDemand,
+            if (AeroObserver.enabled()) {
+                AeroObserver.event(subLevel, "wheel_wind_breakaway", "windDemand", projectedWindDemand,
                         "aggregateGrip", totalGrip, "normalImpulse", contact.normalImpulse(),
                         "friction", contact.friction(), "originalTangent", originalTangent,
                         "limitedTangent", limitedTangent, "correction", correction);
@@ -487,7 +487,7 @@ public final class WeatherForceApplier {
                                                        final Vector3dc centerOfMassLocal) {
         final double profileStrength = Config.aeroPatchPressureStrength();
         if (profileStrength <= 0.0D || samples.isEmpty()) {
-            if (ForceDiagnostics.enabled()) ForceDiagnostics.event(subLevel, "body_skipped", "reason", "profile_strength_or_samples_zero");
+            if (AeroObserver.enabled()) AeroObserver.event(subLevel, "body_skipped", "reason", "profile_strength_or_samples_zero");
             return 0;
         }
         int windwardSamples = 0;
@@ -497,14 +497,14 @@ public final class WeatherForceApplier {
         for (int i = 0; i < samples.size(); i++) {
             final WeatherWindField.WindSample sample = samples.get(i);
             if (sample.areaWeight() <= 0.0D) {
-                if (ForceDiagnostics.enabled()) ForceDiagnostics.event(subLevel, "pressure_rejected", "reason", "zero_area", "samplePosition", sample.samplePosition());
+                if (AeroObserver.enabled()) AeroObserver.event(subLevel, "pressure_rejected", "reason", "zero_area", "samplePosition", sample.samplePosition());
                 continue;
             }
             setBodyPressureWind(sample, SURFACE_WIND);
             computeWindwardSurfacePressure(sample, SURFACE_WIND, PROFILE_SURFACE_WIND);
             final double surfaceSpeed = PROFILE_SURFACE_WIND.length();
             if (surfaceSpeed <= profileThreshold) {
-                if (ForceDiagnostics.enabled()) ForceDiagnostics.pressure(subLevel, sample,
+                if (AeroObserver.enabled()) AeroObserver.pressure(subLevel, sample,
                         sample.wind().lengthSqr() == 0 ? "zero_weather_wind_or_body_motion_only" : surfaceSpeed == 0 ? "leeward_or_tangent" : "below_threshold",
                         SURFACE_WIND, surfaceSpeed, profileThreshold, effectivePatchArea(sample.areaWeight()), 0, new Vector3d(), timeStep, massDamping);
                 continue;
@@ -523,7 +523,7 @@ public final class WeatherForceApplier {
             final double perProfileCap = Config.maxImpulsePerSubstep() * profileStrength;
             LOCAL_WIND_IMPULSE.set(PROFILE_SURFACE_WIND).normalize().mul(magnitude);
             capLength(LOCAL_WIND_IMPULSE, perProfileCap);
-            if (ForceDiagnostics.enabled()) ForceDiagnostics.pressure(subLevel, sample,
+            if (AeroObserver.enabled()) AeroObserver.pressure(subLevel, sample,
                     LOCAL_WIND_IMPULSE.lengthSquared() <= 1.0e-10D ? "negligible_impulse" : "patch_impulse",
                     SURFACE_WIND, surfaceSpeed, profileThreshold, shareWeight, magnitude, LOCAL_WIND_IMPULSE, timeStep, massDamping);
             if (LOCAL_WIND_IMPULSE.lengthSquared() <= 1.0e-10D) {
@@ -544,8 +544,8 @@ public final class WeatherForceApplier {
             final Vector3d localPressureCenter = new Vector3d(LOCAL_APPLICATION_POINT);
             pose.transformNormalInverse(LOCAL_WIND_IMPULSE);
             final Vector3d localImpulse = new Vector3d(LOCAL_WIND_IMPULSE);
-            if (WindDebugFile.isEnabled()) {
-                WindDebugFile.recordSample(
+            if (AeroObserver.traceEnabled()) {
+                AeroObserver.recordSample(
                         subLevel.getLevel().getGameTime(),
                         String.valueOf(subLevel.getUniqueId()),
                         i,
@@ -582,9 +582,9 @@ public final class WeatherForceApplier {
                 applied += group.applyTo(subLevelId, currentTick, massData, netAeroForce);
             }
         }
-        if (ForceDiagnostics.enabled()) ForceDiagnostics.event(subLevel, "body_before_net_cap", "dt", timeStep, "localImpulse", netAeroForce.getLocalForce(), "localTorqueImpulse", netAeroForce.getLocalTorque(), "maxNormalSpeed", maxAppliedAirRelativeSpeed);
+        if (AeroObserver.enabled()) AeroObserver.event(subLevel, "body_before_net_cap", "dt", timeStep, "localImpulse", netAeroForce.getLocalForce(), "localTorqueImpulse", netAeroForce.getLocalTorque(), "maxNormalSpeed", maxAppliedAirRelativeSpeed);
         final ForceTotal cappedAeroForce = capForceTotalByAirRelativeVelocity(netAeroForce, maxAppliedAirRelativeSpeed, massData.getMass());
-        if (ForceDiagnostics.enabled()) ForceDiagnostics.event(subLevel, "body_after_net_cap", "dt", timeStep, "localImpulse", cappedAeroForce.getLocalForce(), "localTorqueImpulse", cappedAeroForce.getLocalTorque(),
+        if (AeroObserver.enabled()) AeroObserver.event(subLevel, "body_after_net_cap", "dt", timeStep, "localImpulse", cappedAeroForce.getLocalForce(), "localTorqueImpulse", cappedAeroForce.getLocalTorque(),
                 "worldImpulse", pose.transformNormal(new Vector3d(cappedAeroForce.getLocalForce())), "mass", massData.getMass());
         LAST_NET_AERO_FORCE.set(cappedAeroForce.getLocalForce());
         LAST_NET_AERO_TORQUE.set(cappedAeroForce.getLocalTorque());
@@ -669,8 +669,8 @@ public final class WeatherForceApplier {
                     this.totalImpulse
             );
             final Vector3d totalLocalTorque = new Vector3d(localTorque).add(differentialTorque);
-            if (WindDebugFile.isEnabled()) {
-                WindDebugFile.recordGroup(
+            if (AeroObserver.traceEnabled()) {
+                AeroObserver.recordGroup(
                         tick,
                         subLevelId,
                         this.role,
