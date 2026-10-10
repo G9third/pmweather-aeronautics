@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "project": "PMWeather Aeronautics",
-  "generated_utc": "2026-10-09T20:53:39.289149+00:00",
+  "generated_utc": "2026-10-10T03:12:28.093062+00:00",
   "verification": "This manifest records source-file hashes and package integrity, not compilation or runtime behavior. See docs/BUILD-SUMMARY.md for build status.",
   "distribution": "Public source and build files; compile-only dependency binaries are omitted.",
   "sha256": {
@@ -44,7 +44,7 @@
     "src/main/java/com/axes/pmweather_aeronautics/ParticleWindClient.java": "786458111c97c28d79339f681cf3f911aad4c04741d181636b00b6cbaa662d9e",
     "src/main/java/com/axes/pmweather_aeronautics/ParticleWindClientEvents.java": "148fc2085117871582d7f06bb835def3c4541fd2b408684541e8910a06a2ed90",
     "src/main/java/com/axes/pmweather_aeronautics/ParticleWindConfig.java": "5b75de5c1e632c5dede682b3fb48f0702a47e0f4b381ecbcb9ce3332ae93315e",
-    "src/main/java/com/axes/pmweather_aeronautics/ParticleWindNetwork.java": "bb2ad11ceed1eb410d33d9a808c73beb49fa130cb1f95476f55018e7510e7c7c",
+    "src/main/java/com/axes/pmweather_aeronautics/ParticleWindNetwork.java": "ac1ca78dc256e7fc7dc1ac0d2fa5d34640a612163bdc5636f6b4a4e9f221e4e9",
     "src/main/java/com/axes/pmweather_aeronautics/PhysicsTickWindBatch.java": "5651c7aafa5a7712a9e96b4e518f6fb12667531ad44ecd36ce275646153ff415",
     "src/main/java/com/axes/pmweather_aeronautics/SableAeroSolver.java": "272097647367b9ec531977ef5b0fcfddd474d3d476b777aa46a2c8208176a044",
     "src/main/java/com/axes/pmweather_aeronautics/WeatherAirflow.java": "d0da6bde96e91fa2a69b61f242a9ad4039c4c4baed66b6decbed1810c0423159",
