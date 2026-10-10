@@ -46,22 +46,24 @@ The body `windInfluence` default and fallback remain `0.1`; `windThreshold` defa
 
 ## Wind and weather commands
 
-| Command | Purpose |
+These public commands use the same `/pmaero` prefix with PMWeather Aeronautics alone or with PMWeather-IV installed.
+
+| Command | Action |
 | --- | --- |
-| `/pmaero wind` | Request one authoritative wind reading. |
-| `/pmaero live on` or `/pmaero live off` | Show or hide the compact wind HUD. |
-| `/pmaero test start [secondsPerPhase]` | Start the repeatable flight sequence. |
-| `/pmaero test stress [secondsPerPhase]` | Start the stress sequence. |
-| `/pmaero test status`, `next`, `stop`, or `list [stress]` | Inspect or control the active test. |
-| `/pmiv wind` and `/pmiv live on|off` | Use the same reading and HUD when PMIV is installed. |
-| `/aerowind wind`, `/aerowind live on|off`, `/aerowind test ...` | Backwards-compatible aliases. |
-| `/pmiv weather test ...` | Backwards-compatible alias for the server test commands. |
+| `/pmaero wind` | Print one server-sampled wind reading. |
+| `/pmaero live on` | Show the live wind HUD. |
+| `/pmaero live off` | Hide the live wind HUD. |
+| `/pmaero test start [secondsPerPhase]` | Start the flight sequence; optionally set seconds per phase. |
+| `/pmaero test stress [secondsPerPhase]` | Start the stress sequence; optionally set seconds per phase. |
+| `/pmaero test status` | Show the active test's status. |
+| `/pmaero test next` | Advance to the next phase. |
+| `/pmaero test stop` | Stop the active test. |
+| `/pmaero test list` | List the flight sequence's phases. |
+| `/pmaero test list stress` | List the stress sequence's phases. |
 
 The default flight sequence is four minutes and the complete test is capped at five
-minutes. Test commands require operator permission on the server. PMIV custom-particle
-wind is enabled by default and uses bounded cached samples. Disable it in the client config
-under `particleWind.enabled`. PMWeather continues to handle its own vanilla and
-Aeronautics particle wind.
+minutes. Test commands require operator permission on the server. PMWeather continues to
+handle its own vanilla and Aeronautics particle wind.
 
 Private development diagnostics are available under `/pmaero debug ...` in the separate
 development artifact. They do not replace the public `wind`, `live`, or `test` commands.
@@ -85,8 +87,7 @@ The current Java 21 candidate was compiled using the jar and jarDev tasks.
 No regression suite or game session was run for this candidate. Previous 1.0 helper checks
 are historical evidence, as recorded in [BUILD-SUMMARY](docs/BUILD-SUMMARY.md).
 
-The public JAR retains the canonical `/pmaero` and `/pmiv` wind, live, and test commands,
-plus the `/aerowind` compatibility aliases. Full force recording, patch visualization,
+The public JAR includes the shared `/pmaero` wind, live display, and weather-test commands. Full force recording, patch visualization,
 profiling hooks, and diagnostic commands under `/pmaero debug` are in the separate private
 dev artifact. Public source archives omit that dev implementation.
 
