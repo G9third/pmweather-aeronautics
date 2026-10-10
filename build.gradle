@@ -3,6 +3,8 @@ plugins {
     id 'net.neoforged.moddev' version '2.0.140'
 }
 
+defaultTasks 'assemble'
+
 version = mod_version
 group = mod_group_id
 

@@ -5,6 +5,7 @@ import java.util.Locale;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -39,8 +40,10 @@ public final class LiveWindMonitor {
 
     private static Level sampledLevel;
     private static WindReading reading = WindReading.UNAVAILABLE;
+    private static WindHudStatus windHudStatus = WindHudStatus.WAITING;
     private static boolean liveMonitoring;
     private static long lastRequestGameTick = Long.MIN_VALUE;
+    private static long pendingWindSinceTick = Long.MIN_VALUE;
     private static long nextRequestId;
     private static long pendingReportId = Long.MIN_VALUE;
     private static long pendingReportTick;
@@ -108,18 +111,23 @@ public final class LiveWindMonitor {
             sendMessage("Join a world before starting the Aerowind test.", ChatFormatting.RED);
             return 0;
         }
-        minecraft.getConnection().sendCommand("aerowind test" + (arguments.isBlank() ? "" : " " + arguments));
+        minecraft.getConnection().sendCommand("pmaero test" + (arguments.isBlank() ? "" : " " + arguments));
         return 1;
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> commandRoot(String root) {
         return Commands.literal(root)
-            .then(Commands.literal("wind")
-                .executes(context -> reportWind())
-                .then(Commands.literal("live")
-                    .executes(context -> reportLiveStatus())
-                    .then(Commands.literal("on").executes(context -> setLive(true)))
-                    .then(Commands.literal("off").executes(context -> setLive(false)))));
+            .then(liveCommand())
+            .then(Commands.literal("wind").executes(context -> reportWind())
+                // Compatibility alias for the former nested command.
+                .then(liveCommand()));
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> liveCommand() {
+        return Commands.literal("live")
+            .executes(context -> reportLiveStatus())
+            .then(Commands.literal("on").executes(context -> setLive(true)))
+            .then(Commands.literal("off").executes(context -> setLive(false)));
     }
 
     public static void registerGuiLayer(RegisterGuiLayersEvent event) {
@@ -136,19 +144,28 @@ public final class LiveWindMonitor {
         applyLatestServerReading();
         if (currentLevel != null) {
             long tick = currentLevel.getGameTime();
-            if (lastReceiptTick != Long.MIN_VALUE && tick - lastReceiptTick > 40L)
+            if (lastReceiptTick != Long.MIN_VALUE && tick - lastReceiptTick > 40L) {
                 reading = WindReading.UNAVAILABLE;
+                windHudStatus = WindHudStatus.STALE;
+            }
+            if (pendingWindSinceTick != Long.MIN_VALUE && tick - pendingWindSinceTick > 40L) {
+                reading = WindReading.UNAVAILABLE;
+                windHudStatus = WindHudStatus.NO_RESPONSE;
+            }
             if (pendingReportId != Long.MIN_VALUE && tick - pendingReportTick > 40L) {
-                sendMessage("The server did not return wind data. Try again.", ChatFormatting.RED);
+                windHudStatus = WindHudStatus.NO_RESPONSE;
+                sendMessage("The server did not return wind data. The wind display will show the unavailable state.", ChatFormatting.RED);
                 pendingReportId = Long.MIN_VALUE;
             }
+        } else {
+            windHudStatus = WindHudStatus.DISCONNECTED;
         }
         if (liveMonitoring) requestAuthoritativeWind(false);
     }
 
     private static int reportWind() {
         if (!requestAuthoritativeWind(true)) {
-            sendMessage("Server wind data is unavailable.", ChatFormatting.RED);
+            sendMessage(windStatusMessage(windHudStatus), ChatFormatting.RED);
             return 0;
         }
         pendingReportId = nextRequestId;
@@ -159,7 +176,7 @@ public final class LiveWindMonitor {
     private static int reportLiveStatus() {
         sendMessage(
             "Live wind display is " + (liveMonitoring ? "enabled." : "disabled.")
-                + " Use /aerowind live on|off.",
+                + " Use /pmaero live on|off.",
             liveMonitoring ? ChatFormatting.GREEN : ChatFormatting.YELLOW
         );
         return 1;
@@ -172,8 +189,8 @@ public final class LiveWindMonitor {
             boolean serverChannel = requestAuthoritativeWind(true);
             sendMessage(
                 serverChannel
-                    ? "Live wind display enabled (authoritative server wind). Use /aerowind live off to disable it."
-                    : "Waiting for server wind data. Use /pmaero wind live off to disable the display.",
+                    ? "Live wind display enabled. Use /pmaero live off to disable it."
+                    : windStatusMessage(windHudStatus) + " Use /pmaero live off to disable the display.",
                 serverChannel ? ChatFormatting.GREEN : ChatFormatting.YELLOW
             );
         } else {
@@ -186,7 +203,9 @@ public final class LiveWindMonitor {
     private static void resetSamplingState() {
         sampledLevel = null;
         reading = WindReading.UNAVAILABLE;
+        windHudStatus = WindHudStatus.WAITING;
         lastRequestGameTick = Long.MIN_VALUE;
+        pendingWindSinceTick = Long.MIN_VALUE;
         lastAcceptedRequestId = Long.MIN_VALUE;
         pendingReportId = Long.MIN_VALUE;
         lastReceiptTick = Long.MIN_VALUE;
@@ -202,12 +221,15 @@ public final class LiveWindMonitor {
     private static boolean requestAuthoritativeWind(boolean force) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player == null || minecraft.level == null || minecraft.getConnection() == null) {
+            windHudStatus = WindHudStatus.DISCONNECTED;
             return false;
         }
         if (!NetworkRegistry.hasChannel(
             minecraft.getConnection(),
             WindMonitorNetwork.RequestPayload.TYPE.id()
         )) {
+            pendingWindSinceTick = Long.MIN_VALUE;
+            windHudStatus = WindHudStatus.CHANNEL_MISSING;
             return false;
         }
         if (sampledLevel != minecraft.level) {
@@ -218,6 +240,12 @@ public final class LiveWindMonitor {
         if (!force && lastRequestGameTick != Long.MIN_VALUE && gameTime - lastRequestGameTick < 2L) {
             return true;
         }
+        if (!reading.available() && (windHudStatus == WindHudStatus.WAITING
+            || windHudStatus == WindHudStatus.CHANNEL_MISSING
+            || windHudStatus == WindHudStatus.DISCONNECTED)) {
+            windHudStatus = WindHudStatus.WAITING;
+        }
+        if (pendingWindSinceTick == Long.MIN_VALUE) pendingWindSinceTick = gameTime;
         lastRequestGameTick = gameTime;
         PacketDistributor.sendToServer(new WindMonitorNetwork.RequestPayload(++nextRequestId));
         return true;
@@ -230,11 +258,13 @@ public final class LiveWindMonitor {
         lastAcceptedRequestId = server.requestId();
         Level level = Minecraft.getInstance().level;
         lastReceiptTick = level == null ? Long.MIN_VALUE : level.getGameTime();
+        pendingWindSinceTick = Long.MIN_VALUE;
         reading = server.available() && server.wind() != null && server.wind().isFinite()
             ? describe(server.wind(), true, true)
             : WindReading.UNAVAILABLE;
+        windHudStatus = reading.available() ? WindHudStatus.AVAILABLE : WindHudStatus.REPLIED_UNAVAILABLE;
         if (pendingReportId != Long.MIN_VALUE && server.requestId() >= pendingReportId) {
-            sendMessage(reading.available() ? commandReading(reading) : "Server wind data is unavailable.",
+            sendMessage(reading.available() ? commandReading(reading) : windStatusMessage(windHudStatus),
                 reading.available() ? ChatFormatting.AQUA : ChatFormatting.RED);
             pendingReportId = Long.MIN_VALUE;
         }
@@ -293,17 +323,22 @@ public final class LiveWindMonitor {
 
     private static void renderHud(GuiGraphics guiGraphics) {
         Minecraft minecraft = Minecraft.getInstance();
+        boolean showTest = !testPhase.isEmpty()
+            && System.nanoTime() - testReceiptNanos < 3_000_000_000L;
         if (!liveMonitoring
-            || !reading.available()
             || minecraft.player == null
             || minecraft.level == null
             || minecraft.options.hideGui
-            || minecraft.screen != null) {
+            || (minecraft.screen != null && !(minecraft.screen instanceof ChatScreen))) {
             return;
         }
 
-        HorizontalReference reference = horizontalReference(minecraft.player);
-        RelativeDirection relative = relativeToPlayer(reading.effectiveMph(), reference.yawDegrees());
+        HorizontalReference reference = reading.available()
+            ? horizontalReference(minecraft.player)
+            : new HorizontalReference(minecraft.player.getYRot(), false);
+        RelativeDirection relative = reading.available()
+            ? relativeToPlayer(reading.effectiveMph(), reference.yawDegrees())
+            : RelativeDirection.ZERO;
 
         // Compact bottom HUD: intentionally a narrow two-line strip above the
         // vanilla hotbar instead of the former large diagram + vertical gauge.
@@ -311,39 +346,45 @@ public final class LiveWindMonitor {
         // can never be mistaken for forward/back airflow.
         int centerX = guiGraphics.guiWidth() / 2;
         int panelBottom = guiGraphics.guiHeight() - 27;
-        boolean showTest = !testPhase.isEmpty()
-            && System.nanoTime() - testReceiptNanos < 3_000_000_000L;
         int panelTop = panelBottom - (showTest ? 63 : 39);
-        int panelWidth = showTest ? Math.max(222,
-            Math.max(minecraft.font.width(testPhase), minecraft.font.width(testProgress)) + 16) : 222;
+        String unavailableLabel = windStatusHudLabel(windHudStatus);
+        int statusWidth = reading.available() ? 0 : minecraft.font.width("WIND  " + unavailableLabel) + 16;
+        int panelWidth = Math.max(222, Math.max(statusWidth, showTest
+            ? Math.max(minecraft.font.width(testPhase), minecraft.font.width(testProgress)) + 16
+            : 0));
         int panelLeft = centerX - panelWidth / 2;
         int panelRight = panelLeft + panelWidth;
 
         guiGraphics.fill(panelLeft, panelTop, panelRight, panelBottom, BACKGROUND);
         guiGraphics.fill(panelLeft, panelTop, panelRight, panelTop + 1, PLANE_LIGHT);
 
-        int arrowX = panelLeft + 29;
-        int arrowY = panelTop + 20;
-        drawCompactHorizontalReference(guiGraphics, arrowX, arrowY);
-        drawCompactHorizontalFlowArrow(guiGraphics, arrowX, arrowY, relative);
+        if (reading.available()) {
+            int arrowX = panelLeft + 29;
+            int arrowY = panelTop + 20;
+            drawCompactHorizontalReference(guiGraphics, arrowX, arrowY);
+            drawCompactHorizontalFlowArrow(guiGraphics, arrowX, arrowY, relative);
 
-        String primary = reading.calm()
-            ? "WIND  calm"
-            : String.format(Locale.ROOT, "WIND  %.1f mph  FROM %s", reading.totalSpeedMph(), reading.fromCardinal());
-        String vertical = compactVerticalLabel(reading.effectiveMph().y());
-        String referenceLabel = reference.vehicleRelative() ? "VEH" : "VIEW";
-        String sourceSuffix = reading.authoritativeServer() ? "" : "  LOCAL";
-        String secondary = reading.calm()
-            ? referenceLabel + sourceSuffix
-            : String.format(
-                Locale.ROOT,
-                "H %.1f  V %s  %s%s",
-                reading.horizontalSpeedMph(), vertical, referenceLabel, sourceSuffix
-            );
+            String primary = reading.calm()
+                ? "WIND  calm"
+                : String.format(Locale.ROOT, "WIND  %.1f mph  FROM %s", reading.totalSpeedMph(), reading.fromCardinal());
+            String vertical = compactVerticalLabel(reading.effectiveMph().y());
+            String referenceLabel = reference.vehicleRelative() ? "VEH" : "VIEW";
+            String sourceSuffix = reading.authoritativeServer() ? "" : "  LOCAL";
+            String secondary = reading.calm()
+                ? referenceLabel + sourceSuffix
+                : String.format(
+                    Locale.ROOT,
+                    "H %.1f  V %s  %s%s",
+                    reading.horizontalSpeedMph(), vertical, referenceLabel, sourceSuffix
+                );
 
-        int textX = panelLeft + 60;
-        guiGraphics.drawString(minecraft.font, primary, textX, panelTop + 10, TEXT_PRIMARY, false);
-        guiGraphics.drawString(minecraft.font, secondary, textX, panelTop + 22, TEXT_SECONDARY, false);
+            int textX = panelLeft + 60;
+            guiGraphics.drawString(minecraft.font, primary, textX, panelTop + 10, TEXT_PRIMARY, false);
+            guiGraphics.drawString(minecraft.font, secondary, textX, panelTop + 22, TEXT_SECONDARY, false);
+        } else {
+            guiGraphics.drawString(minecraft.font, "WIND  " + unavailableLabel,
+                panelLeft + 8, panelTop + 13, TEXT_PRIMARY, false);
+        }
         if (showTest) {
             guiGraphics.drawString(minecraft.font, testPhase, panelLeft + 8, panelTop + 36, TEXT_PRIMARY, false);
             guiGraphics.drawString(minecraft.font, testProgress, panelLeft + 8, panelTop + 48, TEXT_SECONDARY, false);
@@ -443,6 +484,34 @@ public final class LiveWindMonitor {
             return "0.0";
         }
         return String.format(Locale.ROOT, "%s%.1f", verticalMph > 0.0 ? "↑" : "↓", Math.abs(verticalMph));
+    }
+
+    private static String windStatusHudLabel(WindHudStatus status) {
+        return switch (status) {
+            case AVAILABLE -> "AVAILABLE";
+            case CHANNEL_MISSING -> "NO SERVER CHANNEL";
+            case REPLIED_UNAVAILABLE -> "SERVER UNAVAILABLE";
+            case STALE -> "DATA STALE";
+            case NO_RESPONSE -> "NO RESPONSE";
+            case DISCONNECTED -> "DISCONNECTED";
+            case WAITING -> "WAITING FOR SERVER";
+        };
+    }
+
+    private static String windStatusMessage(WindHudStatus status) {
+        return switch (status) {
+            case CHANNEL_MISSING -> "The server does not have the PMAero wind monitor channel. Check that PMAero is installed on the server.";
+            case REPLIED_UNAVAILABLE -> "The server replied, but wind sampling is unavailable.";
+            case STALE -> "The last server wind sample is stale.";
+            case NO_RESPONSE -> "The server did not return a wind sample.";
+            case DISCONNECTED -> "Join a world before requesting server wind data.";
+            case AVAILABLE -> "Server wind data is available.";
+            case WAITING -> "Waiting for the server wind sample.";
+        };
+    }
+
+    private enum WindHudStatus {
+        DISCONNECTED, CHANNEL_MISSING, WAITING, REPLIED_UNAVAILABLE, STALE, NO_RESPONSE, AVAILABLE
     }
 
     private static void drawArrow(

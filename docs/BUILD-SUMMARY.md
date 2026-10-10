@@ -1,11 +1,14 @@
 # PMWeather Aeronautics 1.0 build summary
 
-## Current 2026-10-09 audit-fix candidate
+## Current 2026-10-09 HUD and command integration candidate
 
 - Toolchain: Java 21, NeoForge 21.1.234; compile-only PMWeather 0.17.16 and Sable 2.0.5.
-- Build: offline jar and jarDev tasks.
+- Build: Java 21, offline `jar` and `jarDev` tasks.
 - Result: public and private development compilation and packaging succeeded.
-- No check/regression task or game session was run for this candidate.
+- No check, test, or regression task was run. No game session was run for this candidate.
+- The wind monitor shows explicit waiting, missing-channel, unavailable, stale, and no-response states rather than rendering a calm reading when no server sample exists. PMAero logs a bounded first server sampling failure with its cause and clears that log guard on recovery or server stop. This instrumentation does not establish the cause of a particular unavailable sample without runtime log evidence.
+- Public wind and test controls use `/pmaero` and `/pmiv`; former `/aerowind` and `/pmiv weather test` forms remain aliases. Private diagnostics use `/pmaero debug` so they do not occupy the public `wind` or `live` paths.
+- Running `./gradlew` without a task assembles the clean public variant; `./gradlew jarDev` is the explicit private artifact task.
 - Public and dev gameplay classes share the same source hash in their manifests.
 - Current hashes and matching source archives are recorded in the supplied artifact manifest.
 - Public JAR omits the dev provider, recorders, writers, full diagnostic commands,

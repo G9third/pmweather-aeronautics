@@ -12,6 +12,8 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 public final class WindMonitorNetwork {
     private static volatile Reading latestClientReading = Reading.UNAVAILABLE;
     private static final java.util.Map<ServerPlayer, CachedReading> SERVER = new java.util.WeakHashMap<>();
+    private static final java.util.Map<ServerPlayer, net.minecraft.server.level.ServerLevel> LOGGED_FAILURES =
+        new java.util.WeakHashMap<>();
     private record CachedReading(net.minecraft.server.level.ServerLevel level, long tick,
                                  net.minecraft.world.phys.Vec3 wind, boolean valid) {}
     private static volatile java.lang.reflect.Method pmivStatusMethod;
@@ -33,15 +35,23 @@ public final class WindMonitorNetwork {
         long tick = level.getGameTime();
         CachedReading cached = SERVER.get(player);
         if (cached == null || cached.level() != level || tick - cached.tick() >= 2L || tick < cached.tick()) {
-            net.minecraft.world.phys.Vec3 sample;
-            boolean valid;
+            net.minecraft.world.phys.Vec3 sample = net.minecraft.world.phys.Vec3.ZERO;
+            boolean valid = false;
             try {
                 var point = WindSamplePosition.exposedWorldPoint(level, player);
-                sample = PMWeatherWindApi.sampleRawMph(level, point, PMWeatherWindApi.AIRCRAFT_ATMOSPHERE);
-                valid = sample != null && Double.isFinite(sample.x) && Double.isFinite(sample.y) && Double.isFinite(sample.z);
+                double[] xyz = {point.x, point.y, point.z};
+                double[] output = new double[PMWeatherWindApi.VECTOR_RESULT_STRIDE];
+                if (!PMWeatherWindApi.sampleAircraftWindInto(level, xyz, output)) {
+                    throw new IllegalStateException("PMWeather Aeronautics rejected the vector wind sample");
+                }
+                sample = new net.minecraft.world.phys.Vec3(output[0], output[1], output[2]);
+                if (!Double.isFinite(sample.x) || !Double.isFinite(sample.y) || !Double.isFinite(sample.z)) {
+                    throw new IllegalStateException("PMWeather Aeronautics returned a non-finite vector");
+                }
+                valid = true;
+                LOGGED_FAILURES.remove(player);
             } catch (RuntimeException | LinkageError failure) {
-                sample = net.minecraft.world.phys.Vec3.ZERO;
-                valid = false;
+                logSampleFailure(player, level, failure);
             }
             cached = new CachedReading(level, tick, valid ? sample : net.minecraft.world.phys.Vec3.ZERO, valid);
             SERVER.put(player, cached);
@@ -92,6 +102,18 @@ public final class WindMonitorNetwork {
 
     public static void onServerStopping(net.neoforged.neoforge.event.server.ServerStoppingEvent event) {
         SERVER.clear();
+        LOGGED_FAILURES.clear();
+    }
+
+    private static void logSampleFailure(ServerPlayer player,
+                                         net.minecraft.server.level.ServerLevel level,
+                                         Throwable failure) {
+        net.minecraft.server.level.ServerLevel previous = LOGGED_FAILURES.put(player, level);
+        if (previous != level) {
+            PMWeatherAeronautics.LOGGER.warn(
+                "Server wind monitor sample failed for player {} in {}: {}",
+                player.getGameProfile().getName(), level.dimension().location(), failure.toString(), failure);
+        }
     }
 
     public static void sendTestStatus(ServerPlayer player, String phase, String progress) {

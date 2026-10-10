@@ -14,6 +14,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.fml.ModList;
 
 /** Temporary wind profiles for repeatable Aeronautics and PMIV vehicle checks. */
 public final class AerowindTest {
@@ -103,8 +104,16 @@ public final class AerowindTest {
     }
 
     private static void registerCommands(RegisterCommandsEvent event) {
-        var root = Commands.literal("aerowind").requires(source -> source.hasPermission(2));
-        var test = Commands.literal("test").executes(c -> status(c.getSource()));
+        registerTestRoot(event, "aerowind");
+        registerTestRoot(event, "pmaero");
+        if (ModList.get().isLoaded("pmweather_iv")) registerTestRoot(event, "pmiv");
+    }
+
+    private static void registerTestRoot(RegisterCommandsEvent event, String rootName) {
+        var root = Commands.literal(rootName);
+        var test = Commands.literal("test")
+            .requires(source -> source.hasPermission(2))
+            .executes(c -> status(c.getSource()));
         test.then(Commands.literal("start")
             .executes(c -> start(c.getSource(), 15, false))
             .then(Commands.argument("secondsPerPhase", IntegerArgumentType.integer(5, 18))
@@ -139,7 +148,7 @@ public final class AerowindTest {
             rider.worldPoint(), rider.forward(), secondsPerPhase, stress);
         updateField();
         announce("Started " + (stress ? "stress" : "flight") + " sequence (" + clock(session.totalSeconds())
-            + "). Use /aerowind live on to show wind; /aerowind test stop to end.");
+            + "). Use /pmaero live on to show wind; /pmaero test stop to end.");
         announcePhase();
         return 1;
     }
@@ -229,7 +238,7 @@ public final class AerowindTest {
 
     private static int status(CommandSourceStack source) {
         Session s = session;
-        String message = s == null ? "Wind test idle. /aerowind test start [secondsPerPhase]; /aerowind test stress; /aerowind test list."
+        String message = s == null ? "Wind test idle. /pmaero test start [secondsPerPhase]; /pmaero test stress; /pmaero test list."
             : "Wind test " + (s.stress ? "stress" : "flight") + " " + (s.phase + 1) + "/" + s.scenarios.size()
                 + ": " + s.scenario().label() + ", " + clock((s.phaseTicks - s.tick + 19) / 20) + "s left.";
         source.sendSuccess(() -> Component.literal(message), false);
