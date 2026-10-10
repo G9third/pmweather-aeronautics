@@ -52,7 +52,7 @@ public final class ParticleWindNetwork {
         if (requestId <= 0L || count < 1 || count > MAX_POINTS_PER_BATCH
                 || coordinates == null || coordinates.length < count * 3) return false;
         try {
-            PacketDistributor.sendToServer(new RequestPayload(requestId, count, coordinates));
+            PacketDistributor.sendToServer(new RequestPayload(requestId, count, Arrays.copyOf(coordinates, count * 3)));
             return true;
         } catch (RuntimeException | LinkageError ignored) {
             return false;
