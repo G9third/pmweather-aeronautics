@@ -51,8 +51,9 @@ live HUD. `/aerowind test start` runs the short flight sequence; use `stress`, `
 `next`, `stop`, or `list` under `/aerowind test` to manage or inspect it. The default
 sequence is four minutes and the complete test is capped at five minutes. PMIV uses the
 same test and HUD when installed, while PMAero works on its own for supported Sable bodies.
-Ambient detached-particle wind is enabled by default; it uses bounded cached samples shared
-across visible particles. Disable it in the client config under `particleWind.enabled`.
+PMIV custom-particle wind is enabled by default and uses bounded cached samples. Disable it
+in the client config under `particleWind.enabled`. PMWeather continues to handle its own
+vanilla and Aeronautics particle wind.
 
 ## Public APIs
 

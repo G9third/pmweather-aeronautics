@@ -42,7 +42,7 @@ Native vector observation, Sable lift, early wind frame and native Sable suppres
 require matching injections. Optional wheel adapters remain optional. Applied callsite
 counts are logged once when their target classes transform; a missed optional callsite warns.
 
-The public JAR keeps gameplay, particles, live wind and the test. Full recorders, writers,
+The public JAR keeps gameplay, PMIV custom-particle wind, live wind and the test. Full recorders, writers,
 impulse profiling mixins, patch visualization and diagnostic commands stay in the private
 dev artifact. Observer failures disable diagnostics rather than gameplay.
 

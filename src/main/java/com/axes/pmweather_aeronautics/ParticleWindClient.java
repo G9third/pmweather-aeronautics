@@ -1,16 +1,13 @@
 package com.axes.pmweather_aeronautics;
 
-import com.axes.pmweather_aeronautics.mixin.ParticleWindAccessor;
 import java.util.Arrays;
-import java.util.Locale;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.particle.Particle;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3d;
 
-/** Client-only, bounded local-air drift for detached visible particles. */
+/** Client-only, bounded local-air drift bridge for PMWeather-IV custom particles. */
 public final class ParticleWindClient {
     private static final int CELL_BLOCKS = 16;
     private static final int CACHE_SIZE = 512;
@@ -27,23 +24,6 @@ public final class ParticleWindClient {
     private static final int[] NEIGHBOR_X = {1, -1, 0, 0, 0, 0};
     private static final int[] NEIGHBOR_Y = {0, 0, 1, -1, 0, 0};
     private static final int[] NEIGHBOR_Z = {0, 0, 0, 0, 1, -1};
-    private static final ClassValue<Integer> PARTICLE_KIND = new ClassValue<>() {
-        @Override
-        protected Integer computeValue(Class<?> type) {
-            String name = type.getName().toLowerCase(Locale.ROOT);
-            if (name.startsWith("dev.protomanly.pmweather.")
-                    || name.startsWith("com.axes.pmweather_aeronautics.")
-                    || name.startsWith("com.g9third.pmweatheriv.")
-                    || containsAny(name, "weather", "storm", "tornado", "attached", "trail", "streak",
-                        "lightbeam", "light_beam", "bubble", "drip", "enchant", "portal", "gui", "hud", "rain", "splash")) {
-                return 0;
-            }
-            if (containsAny(name, "smoke", "campfire", "ash")) return 1;
-            if (containsAny(name, "terrain", "block", "debris", "fallingdust")) return 2;
-            return 3;
-        }
-    };
-
     private static final ParticleWindBudget BUDGET = new ParticleWindBudget();
     private static final long[] CELL_KEYS = new long[CACHE_SIZE];
     private static final long[] SAMPLE_TICKS = new long[CACHE_SIZE];
@@ -53,7 +33,6 @@ public final class ParticleWindClient {
     private static final boolean[] OCCUPIED = new boolean[CACHE_SIZE];
     private static final boolean[] TEST_FIELD_SAMPLE = new boolean[CACHE_SIZE];
     private static final double[] WIND_SCRATCH = new double[3];
-    private static final Vector3d PARTICLE_VELOCITY_SCRATCH = new Vector3d();
     private static final long[] CANDIDATE_QUEUE = new long[CANDIDATE_CAPACITY];
     private static final long[] CANDIDATE_SET_KEYS = new long[CANDIDATE_SET_SIZE];
     private static final byte[] CANDIDATE_SET_STATES = new byte[CANDIDATE_SET_SIZE];
@@ -83,28 +62,6 @@ public final class ParticleWindClient {
             clearCache();
             activeLevel = level;
             activeTick = Long.MIN_VALUE;
-        }
-    }
-
-    /** Called by the ParticleEngine hook before each vanilla particle tick. */
-    public static void applyToMinecraftParticle(Particle particle) {
-        if (particle == null || !ParticleWindConfig.ENABLED.get()) return;
-        int particleKind = PARTICLE_KIND.get(particle.getClass());
-        if (particleKind == 0) return;
-        if (!(particle instanceof ParticleWindAccessor accessor) || accessor.pmweatherAeronautics$isOnGround()) return;
-
-        ClientLevel level = accessor.pmweatherAeronautics$getLevel();
-        PARTICLE_VELOCITY_SCRATCH.set(
-            accessor.pmweatherAeronautics$getXd(),
-            accessor.pmweatherAeronautics$getYd(),
-            accessor.pmweatherAeronautics$getZd()
-        );
-        if (applyParticleWind(level, particle,
-                accessor.pmweatherAeronautics$getX(), accessor.pmweatherAeronautics$getY(), accessor.pmweatherAeronautics$getZ(),
-                PARTICLE_VELOCITY_SCRATCH, responseForKind(particleKind))) {
-            accessor.pmweatherAeronautics$setXd(PARTICLE_VELOCITY_SCRATCH.x);
-            accessor.pmweatherAeronautics$setYd(PARTICLE_VELOCITY_SCRATCH.y);
-            accessor.pmweatherAeronautics$setZd(PARTICLE_VELOCITY_SCRATCH.z);
         }
     }
 
@@ -408,17 +365,6 @@ public final class ParticleWindClient {
         double dy = y - camera.y;
         double dz = z - camera.z;
         return dx * dx + dy * dy + dz * dz <= CAMERA_RADIUS_SQUARED;
-    }
-
-    private static double responseForKind(int particleKind) {
-        if (particleKind == 1) return 0.12D;
-        if (particleKind == 2) return 0.015D;
-        return 0.04D;
-    }
-
-    private static boolean containsAny(String value, String... fragments) {
-        for (String fragment : fragments) if (value.contains(fragment)) return true;
-        return false;
     }
 
     private static int floorCell(double position) {

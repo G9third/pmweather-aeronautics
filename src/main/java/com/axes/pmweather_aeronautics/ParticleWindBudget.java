@@ -1,6 +1,6 @@
 package com.axes.pmweather_aeronautics;
 
-/** Allocation-free per-client-tick limits shared by vanilla and IV particles. */
+/** Allocation-free per-client-tick limits for PMWeather-IV custom particles. */
 final class ParticleWindBudget {
     static final int MAX_REFRESH_QUERIES = 8;
     static final int MAX_APPLICATIONS = 4096;

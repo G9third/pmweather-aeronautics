@@ -18,7 +18,7 @@ The [full weather-test cycle video](https://streamable.com/fomjry) shows the fou
 - Correct unpowered Offroad visual spin using its per-wheel longitudinal rolling angle.
 - Report applied compatibility hooks and missed optional adapters.
 - Move full diagnostics to a private dev JAR. Live wind, weather test and bounded
-  detached-particle wind remain in the public JAR.
+  PMIV custom-particle wind remain in the public JAR.
 - Retain body wind default 0.1, threshold 0.0, and the four-minute default weather cycle.
 
 Support covers PMWeather 0.17.14 through 0.17.16; compilation uses 0.17.16.

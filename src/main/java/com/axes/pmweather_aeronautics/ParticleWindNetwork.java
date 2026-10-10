@@ -23,7 +23,7 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
-/** Bounded server-authoritative native 3-D wind samples for nearby client particles. */
+/** Bounded server-authoritative native 3-D wind samples for nearby PMWeather-IV particles. */
 public final class ParticleWindNetwork {
     public static final int MAX_POINTS_PER_BATCH = 8;
     private static final double MAX_PLAYER_DISTANCE_SQUARED = 96.0D * 96.0D;
