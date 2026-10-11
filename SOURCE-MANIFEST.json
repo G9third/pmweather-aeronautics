@@ -1,20 +1,21 @@
 {
   "version": "1.1",
   "project": "PMWeather Aeronautics",
-  "generated_utc": "2026-10-11T23:15:46.657982+00:00",
+  "generated_utc": "2026-10-11T23:34:18.858075+00:00",
   "verification": "This manifest records source-file hashes and package integrity, not compilation or runtime behavior. See docs/BUILD-SUMMARY.md for build status.",
   "distribution": "Public source and build files; compile-only dependency binaries are omitted.",
   "sha256": {
     ".gitignore": "9702e2578c856e76dcc05cef364d24e7d477ac39ca07fa5b5b43facbc0a70929",
     "LICENSE": "c31e353ca326217b28da5b400da7675a9f92d28e897f3ee638444fa3e0451089",
-    "README.md": "bbd37260112038a28608dfe3391e328679ccb5bf47a25612a58e839d971511e4",
-    "THIRD_PARTY_NOTICES.md": "58bf13f647463badc15816ec1a7545e5226d8a82d0809465a75e02a87c2c6c56",
+    "README.md": "4a003853c891224f0e7bdc63e7f5aae0ec6fef52421f8f3b9294b222a6f591ce",
+    "THIRD_PARTY_NOTICES.md": "3dbcff8afbc25a496e1d182145ccf9a9efe09c43af4ee37248b10d476cff187d",
     "build.gradle": "1fc90b942fd0bb26a35097f4992c1dbcf9e9f3c369be871711e667fd8452c77f",
-    "docs/BUILD-SUMMARY.md": "8dec4cc8e0c66fefdbab25e8f318f07c3917fcab91fd4cc9b021cbdd9711606c",
+    "docs/BASELINE-COMPATIBILITY.md": "cc98d82f7fde1b631aea707dbd68129432e5bb8880e994b1300790ebfaf95475",
+    "docs/BUILD-SUMMARY.md": "be6bc22ae2df62c10cb5dc2b214a95ef948af9aed9bff28a75d496f6a66b33c5",
     "docs/EXTERNAL-API.md": "878e23c137f8acccf7bcd9a62735ba4b45e04448b8ac510b78e8cd12ecba48f1",
-    "docs/NATIVE-WIND-INTEGRATION.md": "5bb6135efc6c0b342fb168f7a3c9913e013f6e6f95e88dbac2285bb085e20d09",
+    "docs/NATIVE-WIND-INTEGRATION.md": "edd76a5290cf758591adba2a1e96aeb46eaeaff3a70c007ed9f540c9f499ca31",
     "docs/RELEASE-1.0.md": "32624e5db72e853fe0da34c0c621dd47d41acb729d0474d76728e0b75e25e084",
-    "docs/RELEASE-1.1.md": "a94c7e279c95dfaf1f199a503e49fa2a542c5d0c17b4b89c5f7375fd3be87b20",
+    "docs/RELEASE-1.1.md": "79b77432673c0c5ffa907db1b0b9da59e56116e804fd28ad548241357dd56ed1",
     "docs/WHEEL-CONTACT-API.md": "0a1ad7873cbb7663e4003208969c3319c27c5079b3759231747d2b79fa3980b0",
     "gradle/wrapper/LICENSE": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
     "gradle/wrapper/gradle-wrapper.jar": "55243ef57851f12b070ad14f7f5bb8302daceeebc5bce5ece5fa6edb23e1145c",
@@ -71,7 +72,7 @@
     "src/main/java/com/axes/pmweather_aeronautics/mixin/ParticleEngineWindMixin.java": "a3014860d9d24dddf68cc0e683616ee56bc5df929a734446ddd89a1d530a51a6",
     "src/main/java/com/axes/pmweather_aeronautics/mixin/SableBuiltinWindMixin.java": "907e148076c8fc07f965192d825bfe55efcbfb543deecd716d36a8b90ce02aaa",
     "src/main/java/com/axes/pmweather_aeronautics/mixin/SubLevelPhysicsSystemWindBatchMixin.java": "6d553305bf0b1505cea80ddc65a85b9df53134d7db61d538caf6e6c080aa1b6a",
-    "src/main/resources/META-INF/neoforge.mods.toml": "715a4b1fd9fd56784c9ef5161f33a5f3249ac643dd640785ee177bda3f048e6f",
+    "src/main/resources/META-INF/neoforge.mods.toml": "5e2102db793b910c5160eeaa03862a791b58cd46ecb226bdb4e85b899ae909f3",
     "src/main/resources/assets/pmweather_aeronautics/lang/en_us.json": "736b4c096824d26c3d50961db8ee5ea5e10cbb925d0c3d58b64e5c392c2a5659",
     "src/main/resources/pmweather_aeronautics.mixins.json": "95989e8fcc948eea22b31379b4bc8739595a0dca9ac7c97bc23845b72d93f5fc",
     "src/test/java/com/axes/pmweather_aeronautics/ExternalApiChecks.java": "eeba39150fd702d3b605a38cea89eb998b41f5ed98fc574abbbdd5adc66ec33f",
@@ -79,6 +80,6 @@
     "tools/ParticleCandidateSetRegression.java": "b28ab63f32b6d85de0b0fc5dd56c36a94191018fd905e887c7e9fa05f119ea21",
     "tools/ParticleWindBudgetRegression.java": "e5d10030c24fcbd9e0dcbd68bd7b2a8a9a26ee4d6f5710cb8166bc3b1b127c10",
     "tools/fetch_compile_dependencies.py": "eddbc5eef373bf071f933b88e7e695cbb5e66f94ac7be7639bb54fc6d1b09d41",
-    "tools/package_source.py": "a02719b35a96c35ad4d168298e11e6131b0c8182ab6ddf8fce76f8c6751b237d"
+    "tools/package_source.py": "67c6bd4d9c442152a7f7c7740f67512b59805e1a5a3bca5cb46fd19161b6d76a"
   }
 }

@@ -11,7 +11,7 @@ PMAero does not include PMWeather classes, assets, dependency JARs or a reproduc
 of its tornado combination formulas. For PMWeather 0.16.4, the version-selected adapter
 calls its existing native wind API and retains the returned XYZ vector, including Y.
 It does not copy or independently reimplement that version's weather calculations.
-For PMWeather 0.17.14 through 0.17.16, it calls the native wind engine. A scoped
+For PMWeather 0.17.x, it calls the native wind engine. A scoped
 mixin observes the native supercell vectors already evaluated by that call,
 returns them unchanged, and adds only their otherwise discarded Y contribution
 to PMAero's result. Native horizontal wind and existing fire-whirl Y stay native.

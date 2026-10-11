@@ -1,6 +1,6 @@
 # PMWeather Aeronautics 1.1
 
-- Adds automatic support for exactly PMWeather 0.16.4 alongside 0.17.14 through 0.17.16.
+- Adds automatic support for exactly PMWeather 0.16.4 alongside 0.17.x (0.17.0 or later).
 - Uses 0.16.4's native wind API and preserves its XYZ output, including vertical tornado wind. No additional Y correction or copied tornado calculation is used.
 - Skips newer PMWeather hooks when 0.16.4 is installed, preventing missing-method and missing-target failures.
 - Retains the modern wind integration, aerodynamic and wheel behavior, shared `/pmaero` commands, clean default build and separate development trace recorder.

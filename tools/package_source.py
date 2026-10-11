@@ -14,7 +14,7 @@ fixed_files = {
     'gradle/wrapper/gradle-wrapper.jar',
     'gradle/wrapper/gradle-wrapper.properties',
     'libs/DEPENDENCIES.json', 'libs/README.md',
-    'docs/BUILD-SUMMARY.md', 'docs/EXTERNAL-API.md', 'docs/RELEASE-1.0.md', 'docs/RELEASE-1.1.md',
+    'docs/BASELINE-COMPATIBILITY.md', 'docs/BUILD-SUMMARY.md', 'docs/EXTERNAL-API.md', 'docs/RELEASE-1.0.md', 'docs/RELEASE-1.1.md',
     'docs/WHEEL-CONTACT-API.md', 'docs/NATIVE-WIND-INTEGRATION.md', 'THIRD_PARTY_NOTICES.md',
     'tools/fetch_compile_dependencies.py', 'tools/package_source.py',
     'tools/ParticleCandidateSetRegression.java', 'tools/ParticleWindBudgetRegression.java',

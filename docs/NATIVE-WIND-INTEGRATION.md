@@ -3,9 +3,9 @@
 ## Native engine
 
 PMAero 1.1 supports exactly PMWeather 0.16.4 in addition to the existing
-0.17.14 through 0.17.16 range. Compilation uses 0.17.16. Loader metadata selects
+0.17.x (0.17.0 or later) range. Compilation uses 0.17.16. Loader metadata selects
 0.16.4 before mixin application; other versions do not select its adapter.
-The declared range excludes unaudited releases. Sable remains 2.0.5 through 2.x.
+The declared range excludes unaudited releases. Sable 2.x is allowed, starting at 2.0.0.
 
 ### PMWeather 0.16.4
 
@@ -22,7 +22,7 @@ Synthetic weather tests, shelter options, sample caching, wheel integration and
 public command paths remain shared. The older engine resolves its own terrain
 height because its API cannot accept the cached height used by the modern engine.
 
-### PMWeather 0.17.14 through 0.17.16
+### PMWeather 0.17.x (0.17.0 or later)
 
 Each uncached real-weather point makes one WindEngine.getWind call. PMWeather owns storm
 selection, influence radii, horizontal combination, maximum-speed decisions and fire-whirl Y.

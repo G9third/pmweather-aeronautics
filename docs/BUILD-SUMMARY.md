@@ -7,7 +7,7 @@
 - Version selection uses loader metadata. Exactly 0.16.4 skips the modern tornado-vector and built-in Sable hooks.
 - Modern wind implementation revision 3 and packed API layouts remain unchanged for PMIV compatibility.
 - Clean is the default build. Development recording remains in the separate dev artifact.
-- No regression suite or Minecraft session was run for this candidate. Runtime loading and weather behavior still need in-game confirmation on both supported paths.
+- Clean/dev baseline compilation and existing public regression suites passed against PMWeather 0.17.0 and Sable 2.0.0. Static API and required hook-target checks also passed. No Minecraft session was run; runtime loading and weather behavior still need confirmation. See [baseline compatibility](BASELINE-COMPATIBILITY.md).
 
 ## Historical 2026-10-10 direct integration review
 

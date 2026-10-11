@@ -12,7 +12,7 @@ shows the four-minute flight sequence.
 
 Version 1.1 adds automatic compatibility with **PMWeather 0.16.4**, preserving its native
 XYZ wind, including vertical tornado wind. Only that installed version uses the legacy
-adapter. PMWeather 0.17.14 through 0.17.16 retain the existing native wind integration.
+adapter. PMWeather 0.17.x (0.17.0 or later) retain the existing native wind integration.
 PMIV **0.12.1 or later** also accepts PMWeather 0.16.4 through PMAero 1.1. Earlier
 PMIV 0.12 builds keep their existing modern-weather dependency restriction.
 
@@ -26,13 +26,13 @@ exceeds recorded contact grip; native spring/support impulses are preserved.
 
 - Minecraft 1.21.1 and NeoForge 21.1.234 or later
 - Java 21
-- PMWeather **0.16.4**, or **0.17.14 through 0.17.16**, and Sable 2.0.5 through 2.x
-- Other PMWeather 0.16.x versions and 0.17.0 through 0.17.13 are not declared supported
+- PMWeather **0.16.4**, or **0.17.x (0.17.0 or later)**, and Sable 2.x (2.0.0 or later)
+- Other PMWeather 0.16.x versions and 0.18 or later are not declared supported
 - Optional wheel-contact adapters are audited for Offroad 1.3.0 and 1.3.2, Create Tracks
   1.0.1, and Aeronautics No Horizon 1.0.3
 - Aeronautics, Offroad, Tracks, and No Horizon remain separate optional mods
 
-With PMWeather 0.17.14 through 0.17.16, PMAero suppresses PMWeather's separate built-in Sable
+With PMWeather 0.17.x (0.17.0 or later), PMAero suppresses PMWeather's separate built-in Sable
 wind/inertia force callback by default, avoiding duplicate Sable wind forces without editing
 PMWeather's config. PMWeather weather and wind sampling remain enabled. To restore that
 callback, set `compatibility.suppressBuiltinSableWind = false` in
@@ -92,8 +92,10 @@ JARs are not embedded in the mod JAR or public source archive. Sable supplies it
 Companion Common library at runtime; its extracted JAR is only a compile input.
 
 The current Java 21 candidate was compiled using the jar and jarDev tasks.
-No regression suite or game session was run for this candidate. Previous 1.0 helper checks
-are historical evidence, as recorded in [BUILD-SUMMARY](docs/BUILD-SUMMARY.md).
+Both mods compiled against PMWeather 0.17.0 and Sable 2.0.0, and existing public regression
+checks passed. No new Minecraft session was run. Other 0.17.x and 2.x versions are
+allowed under the assumption of compatible integration APIs. See
+[baseline compatibility](docs/BASELINE-COMPATIBILITY.md) and [BUILD-SUMMARY](docs/BUILD-SUMMARY.md).
 
 The public JAR includes the shared `/pmaero` wind, live display, and weather-test commands. Full force recording, patch visualization,
 profiling hooks, and diagnostic commands under `/pmaero debug` are in the separate private
@@ -107,7 +109,7 @@ source distribution.
 ## Wind integration
 
 PMWeather 0.16.4 supplies the complete native XYZ result directly. PMAero retains its
-vertical wind and adds no vertical correction. With PMWeather 0.17.14 through 0.17.16,
+vertical wind and adds no vertical correction. With PMWeather 0.17.x (0.17.0 or later),
 native PMWeather owns horizontal combination and fire-whirl vertical motion; PMAero
 restores the signed supercell Y already evaluated internally but discarded from the
 combined output. It does not recreate native tornado formulas. Overlapping captured
