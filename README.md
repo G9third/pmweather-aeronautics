@@ -7,7 +7,7 @@ the responsibility of PMWeather-IV; this mod does not add an IV vehicle force pa
 
 Version 1.0 supports Immersive Vehicles through the separate [PMWeather-IV (PMIV) addon](https://github.com/G9third/pmweather-iv).
 PMIV 0.12.0-rc1 shares PMAero's authoritative wind HUD and weather-test system when both
-addons are installed. The [full weather-test cycle video](https://streamable.com/fomjry)
+addons are installed. The [full weather-test cycle video](https://www.youtube.com/watch?v=pCM3C3d09k0)
 shows the four-minute flight sequence.
 
 This 1.0 update corrects aerodynamic pressure lines of action, accounts for angular
