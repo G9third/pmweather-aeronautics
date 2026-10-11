@@ -1,17 +1,23 @@
-# PMWeather Aeronautics 1.0
+# PMWeather Aeronautics 1.1
 
 PMWeather Aeronautics applies signed XYZ PMWeather wind to Sable rigid
 bodies, including Create: Aeronautics vehicles, and exposes versioned body-pressure and
 virtual lifting-surface APIs to compatible addons. Immersive Vehicles entities remain
 the responsibility of PMWeather-IV; this mod does not add an IV vehicle force path.
 
-Version 1.0 supports Immersive Vehicles through the separate [PMWeather-IV (PMIV) addon](https://github.com/G9third/pmweather-iv).
-PMIV 0.12.0-rc1 shares PMAero's authoritative wind HUD and weather-test system when both
+Version 1.1 retains Immersive Vehicles support through the separate [PMWeather-IV (PMIV) addon](https://github.com/G9third/pmweather-iv).
+PMIV 0.12.1 shares PMAero's authoritative wind HUD and weather-test system when both
 addons are installed. The [full weather-test cycle video](https://www.youtube.com/watch?v=pCM3C3d09k0)
 shows the four-minute flight sequence.
 
-This 1.0 update corrects aerodynamic pressure lines of action, accounts for angular
-velocity at each pressure point when body-relative wind drag is enabled, and adds
+Version 1.1 adds automatic compatibility with **PMWeather 0.16.4**, preserving its native
+XYZ wind, including vertical tornado wind. Only that installed version uses the legacy
+adapter. PMWeather 0.17.14 through 0.17.16 retain the existing native wind integration.
+PMIV **0.12.1 or later** also accepts PMWeather 0.16.4 through PMAero 1.1. Earlier
+PMIV 0.12 builds keep their existing modern-weather dependency restriction.
+
+The retained 1.0 features correct aerodynamic pressure lines of action, account for angular
+velocity at each pressure point when body-relative wind drag is enabled, and add
 conditional wind breakaway handling for audited tire and track contact paths. The
 breakaway correction is activated only when the current weather-induced net body impulse
 exceeds recorded contact grip; native spring/support impulses are preserved.
@@ -20,17 +26,19 @@ exceeds recorded contact grip; native spring/support impulses are preserved.
 
 - Minecraft 1.21.1 and NeoForge 21.1.234 or later
 - Java 21
-- PMWeather 0.17.14 through 0.17.16 and Sable 2.0.5 through 2.x
+- PMWeather **0.16.4**, or **0.17.14 through 0.17.16**, and Sable 2.0.5 through 2.x
+- Other PMWeather 0.16.x versions and 0.17.0 through 0.17.13 are not declared supported
 - Optional wheel-contact adapters are audited for Offroad 1.3.0 and 1.3.2, Create Tracks
   1.0.1, and Aeronautics No Horizon 1.0.3
 - Aeronautics, Offroad, Tracks, and No Horizon remain separate optional mods
 
-When PMWeather is installed, PMAero suppresses PMWeather's separate built-in Sable
+With PMWeather 0.17.14 through 0.17.16, PMAero suppresses PMWeather's separate built-in Sable
 wind/inertia force callback by default, avoiding duplicate Sable wind forces without editing
 PMWeather's config. PMWeather weather and wind sampling remain enabled. To restore that
 callback, set `compatibility.suppressBuiltinSableWind = false` in
 `pmweather_aeronautics-common.toml`. Removing PMAero removes the mixin, so PMWeather's
-callback runs again without changing PMWeather's saved config.
+callback runs again without changing PMWeather's saved config. PMWeather 0.16.4 has no
+built-in Sable callback, so this suppression hook is skipped for that version.
 
 The whole-body aerodynamic pressure path uses Sable rigid-body sublevels. The tire
 breakaway adapter observes the shared Offroad/Tracks `TireLike` wheel path. The No Horizon
@@ -98,10 +106,12 @@ source distribution.
 
 ## Wind integration
 
-Native PMWeather owns horizontal combination and fire-whirl vertical motion.
-PMAero restores the signed supercell Y that the supported engine evaluates internally
-but discards from its combined output. It does not recreate native tornado formulas.
-Overlapping supercell Y components add; this differs numerically from older PMAero blends.
+PMWeather 0.16.4 supplies the complete native XYZ result directly. PMAero retains its
+vertical wind and adds no vertical correction. With PMWeather 0.17.14 through 0.17.16,
+native PMWeather owns horizontal combination and fire-whirl vertical motion; PMAero
+restores the signed supercell Y already evaluated internally but discarded from the
+combined output. It does not recreate native tornado formulas. Overlapping captured
+supercell Y components add in this modern path.
 See [native integration details](docs/NATIVE-WIND-INTEGRATION.md) and
 [third-party notices](THIRD_PARTY_NOTICES.md).
 

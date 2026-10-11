@@ -9,14 +9,16 @@ import argparse
 root = Path(__file__).resolve().parents[1]
 fixed_files = {
     '.gitignore', 'LICENSE', 'README.md', 'build.gradle', 'settings.gradle', 'gradle.properties',
+    'gradle/wrapper/LICENSE',
     'gradlew', 'gradlew.bat',
     'gradle/wrapper/gradle-wrapper.jar',
     'gradle/wrapper/gradle-wrapper.properties',
     'libs/DEPENDENCIES.json', 'libs/README.md',
-    'docs/BUILD-SUMMARY.md', 'docs/EXTERNAL-API.md', 'docs/RELEASE-1.0.md',
+    'docs/BUILD-SUMMARY.md', 'docs/EXTERNAL-API.md', 'docs/RELEASE-1.0.md', 'docs/RELEASE-1.1.md',
     'docs/WHEEL-CONTACT-API.md', 'docs/NATIVE-WIND-INTEGRATION.md', 'THIRD_PARTY_NOTICES.md',
     'tools/fetch_compile_dependencies.py', 'tools/package_source.py',
     'tools/ParticleCandidateSetRegression.java', 'tools/ParticleWindBudgetRegression.java',
+    'tools/PacketCodecRegression.java',
     'src/test/java/com/axes/pmweather_aeronautics/ExternalApiChecks.java',
 }
 paths = {root / name for name in fixed_files}
@@ -26,7 +28,7 @@ if missing:
     raise SystemExit('Missing public source files: ' + ', '.join(missing))
 paths = sorted(paths)
 manifest = {
-    'version': '1.0',
+    'version': '1.1',
     'project': 'PMWeather Aeronautics',
     'generated_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
     'verification': 'This manifest records source-file hashes and package integrity, not compilation or runtime behavior. See docs/BUILD-SUMMARY.md for build status.',

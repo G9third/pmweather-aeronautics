@@ -1,6 +1,7 @@
 package com.axes.pmweather_aeronautics.mixin;
 
 import com.axes.pmweather_aeronautics.IntegrationHealth;
+import com.axes.pmweather_aeronautics.PMWeatherCompatibility;
 import com.mojang.logging.LogUtils;
 import java.util.List;
 import java.util.Set;
@@ -13,7 +14,14 @@ import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
 public final class IntegrationMixinPlugin implements IMixinConfigPlugin {
     @Override public void onLoad(String mixinPackage) {}
     @Override public String getRefMapperConfig() { return null; }
-    @Override public boolean shouldApplyMixin(String targetClassName, String mixinClassName) { return true; }
+    @Override public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+        if (PMWeatherCompatibility.isLegacy0164()
+                && (mixinClassName.endsWith(".NativeStormVectorMixin")
+                    || mixinClassName.endsWith(".SableBuiltinWindMixin"))) {
+            return false;
+        }
+        return true;
+    }
     @Override public void acceptTargets(Set<String> myTargets, Set<String> otherTargets) {}
     @Override public List<String> getMixins() { return null; }
     @Override public void preApply(String target, ClassNode node, String mixin, IMixinInfo info) {}

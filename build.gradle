@@ -59,10 +59,11 @@ tasks.register('verifyExternalApi', JavaExec) {
     mainClass = 'com.axes.pmweather_aeronautics.ExternalApiChecks'
 }
 sourceSets.test.java.srcDir 'tools'
+sourceSets.test.java.exclude 'dev/**'
 sourceSets.test.compileClasspath += sourceSets.main.compileClasspath
 sourceSets.test.runtimeClasspath += sourceSets.main.compileClasspath
 
-['ParticleCandidateSetRegression', 'ParticleWindBudgetRegression'].each { regression ->
+['ParticleCandidateSetRegression', 'ParticleWindBudgetRegression', 'PacketCodecRegression'].each { regression ->
     tasks.register("verify${regression}", JavaExec) {
         dependsOn tasks.named('testClasses')
         classpath = sourceSets.test.runtimeClasspath
@@ -99,6 +100,19 @@ sourceSets {
         runtimeClasspath += sourceSets.main.output + configurations.runtimeClasspath
     }
 }
+sourceSets {
+    devRegression {
+        java.setSrcDirs(['tools/dev'])
+        compileClasspath += sourceSets.dev.output + sourceSets.dev.compileClasspath
+        runtimeClasspath += sourceSets.dev.output + sourceSets.dev.runtimeClasspath
+    }
+}
+tasks.register('checkDev', JavaExec) {
+    dependsOn tasks.named('devRegressionClasses')
+    classpath = sourceSets.devRegression.output + sourceSets.dev.output
+    mainClass = 'com.axes.pmweather_aeronautics.RawQueryTraceBudgetRegression'
+}
+
 tasks.register('jarDev', Jar) {
     dependsOn tasks.named('classes'), tasks.named('devClasses')
     archiveClassifier = 'dev'

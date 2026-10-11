@@ -2,7 +2,6 @@ package com.axes.pmweather_aeronautics;
 import dev.protomanly.pmweather.event.GameBusEvents;
 import dev.protomanly.pmweather.weather.Storm;
 import dev.protomanly.pmweather.weather.WeatherHandler;
-import dev.protomanly.pmweather.weather.WindEngine;
 import dev.protomanly.pmweather.weather.storms.StormTypes;
 import dev.protomanly.pmweather.util.Util;
 import dev.ryanhcode.sable.companion.math.Pose3d;
@@ -22,7 +21,8 @@ import java.util.Map;
 /**
  * Samples native PMWeather wind at exterior body and lift-provider points.
  * Sable frames share scheduled samples; external owners reuse exact same-tick queries.
- * Native combination owns horizontal wind and fire-whirl Y. A scoped observation restores
+ * PMWeather 0.16.4 supplies native XYZ directly. On the modern path, native combination
+ * owns horizontal wind and fire-whirl Y. A scoped observation restores
  * supercell Y discarded by the supported native engine without duplicating its formulas.
  */
 final class WeatherWindField {
@@ -470,10 +470,10 @@ final class WeatherWindField {
                                         final RawWindBatchContext context) {
         final PMWeatherWindApi.SampleOptions options = new PMWeatherWindApi.SampleOptions(
                 true, Config.enableTornadoSuction(), true, false);
-        if (AeroObserver.enabled()) {
+        if (AeroObserver.wantsRawQuery(level)) {
             final RawWindSample detail = sampleRawWindDetailedAt(level, samplePosition, context, options);
-            AeroObserver.event(null, "raw_query", "dimension", level.dimension().location().toString(),
-                    "tick", level.getGameTime(), "position", samplePosition, "windMph", detail.wind(),
+            AeroObserver.rawQuery(level, "dimension", level.dimension().location().toString(),
+                    "dimensionGameTime", level.getGameTime(), "position", samplePosition, "windMph", detail.wind(),
                     "nativeVerticalCorrectionUsed", detail.nativeTornadoVectorUsed(),
                     "stormCount", detail.stormSnapshotCount(),
                     "nearestStormDistance", detail.nearestStormDistanceMeters());
@@ -546,19 +546,19 @@ final class WeatherWindField {
             context.shelteredQueries++;
             return context.remember(key, new ResolvedWind(Vec3.ZERO, false, false));
         }
-        // Shelter was checked once above. The native combination owns all horizontal blending,
+        // Shelter was checked once above. The selected native API owns horizontal blending,
         // fire-whirl Y, influence decisions and storm selection. Capture the supercell vectors
-        // it already evaluates, then add only their otherwise discarded vertical component.
+        // it already evaluates on modern versions. The 0.16.4 path retains native Y directly.
         final boolean timed = AeroObserver.enabled();
         final long began = timed ? System.nanoTime() : 0L;
         final Vec3 nativeWind;
         final double missingY;
-        try (NativeTornadoCapture.Scope capture = NativeTornadoCapture.begin()) {
+        try {
             context.nativeQueries++;
-            nativeWind = WindEngine.getWind(point, level, !options.includeStorms(),
-                    !options.includeTornadoes(), false, options.atmosphericField(), false, terrainY);
-            missingY = capture.verticalMph();
-            context.nativeVerticalVectors += capture.vectorCount();
+            final NativeWeatherWind.Sample sampled = NativeWeatherWind.sample(level, point, options, terrainY);
+            nativeWind = sampled.wind();
+            missingY = sampled.missingVerticalMph();
+            context.nativeVerticalVectors += sampled.capturedVectors();
         } finally {
             if (timed) context.nativeNanos += System.nanoTime() - began;
         }

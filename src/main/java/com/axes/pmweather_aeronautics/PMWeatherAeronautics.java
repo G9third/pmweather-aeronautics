@@ -16,6 +16,8 @@ public final class PMWeatherAeronautics {
     public static final String MODID = "pmweather_aeronautics";
     public static final Logger LOGGER = LogUtils.getLogger();
     public PMWeatherAeronautics(final IEventBus modBus, final ModContainer modContainer) {
+        LOGGER.info("PMAero weather integration: PMWeather {} using {}", PMWeatherCompatibility.installedVersion(),
+                PMWeatherCompatibility.isLegacy0164() ? "native 0.16.4 XYZ wind" : "modern native wind with scoped vertical capture");
         PMWeatherForceGroups.register(modBus);
         modBus.addListener(WindMonitorNetwork::registerPayloads);
         modBus.addListener(ParticleWindNetwork::registerPayloads);

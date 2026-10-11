@@ -1,20 +1,24 @@
-# PMWeather Aeronautics 1.0 build summary
+# PMWeather Aeronautics 1.1 build summary
 
-## Current 2026-10-09 HUD and command integration candidate
+## Current 1.1 compatibility candidate
 
-- Toolchain: Java 21, NeoForge 21.1.234; compile-only PMWeather 0.17.16 and Sable 2.0.5.
-- Build: Java 21, offline `jar` and `jarDev` tasks.
-- Result: public and private development compilation and packaging succeeded.
-- No check, test, or regression task was run. No game session was run for this candidate.
-- The wind monitor shows explicit waiting, missing-channel, unavailable, stale, and no-response states rather than rendering a calm reading when no server sample exists. PMAero logs a bounded first server sampling failure with its cause and clears that log guard on recovery or server stop. This instrumentation does not establish the cause of a particular unavailable sample without runtime log evidence.
-- Public wind and test controls use `/pmaero` and `/pmiv`; former `/aerowind` and `/pmiv weather test` forms remain aliases. Private diagnostics use `/pmaero debug` so they do not occupy the public `wind` or `live` paths.
-- Running `./gradlew` without a task assembles the clean public variant; `./gradlew jarDev` is the explicit private artifact task.
-- Public and dev gameplay classes share the same source hash in their manifests.
-- Current hashes and matching source archives are recorded in the supplied artifact manifest.
-- Public JAR omits the dev provider, recorders, writers, full diagnostic commands,
-  visualization, impulse profiling hooks and dev mixin configuration.
-- Dependencies are not embedded in either JAR or public source archive.
-- Optional integration application and numerical handling remain to be measured in game.
+- Java 21 offline `jar jarDev` compilation succeeded against PMWeather 0.17.16.
+- The supplied PMWeather 0.16.4 API was inspected for native method descriptors, parameter semantics and vertical output availability.
+- Version selection uses loader metadata. Exactly 0.16.4 skips the modern tornado-vector and built-in Sable hooks.
+- Modern wind implementation revision 3 and packed API layouts remain unchanged for PMIV compatibility.
+- Clean is the default build. Development recording remains in the separate dev artifact.
+- No regression suite or Minecraft session was run for this candidate. Runtime loading and weather behavior still need in-game confirmation on both supported paths.
+
+## Historical 2026-10-10 direct integration review
+
+- Java 21 offline `check checkDev jar jarDev` passed.
+- The packaged public source ZIP built and passed its checks independently. The default Gradle command assembles only the clean variant.
+- External aerodynamic API checks passed 488 assertions. Actual packet codecs passed 65 assertions, including all one-to-eight-point particle batches, malformed array lengths/counts, defensive array copies and HUD/test snapshots.
+- Particle candidate-set and wind-budget regressions passed. The private raw-query budget passed 10,011 assertions, including concurrent claims, decimation and session reset.
+- Private trace sampling checks its budget before gathering nearest-storm metadata. Captured raw-query rows use the actual server tick; ordinary native wind queries and vectors are unchanged.
+- Public live wind uses `/pmaero live on` and `/pmaero live off`; `/aerowind` remains a legacy alias. PMIV supplies its own aliases when installed.
+- Public and private shared classes and public-source archive hashes were verified. Dependencies and private recorders are excluded from public distributions.
+- No new Minecraft session was run for this candidate. HUD appearance, loaded mixin behavior, multiplayer and vehicle handling still need in-game confirmation.
 
 ## Historical build evidence
 

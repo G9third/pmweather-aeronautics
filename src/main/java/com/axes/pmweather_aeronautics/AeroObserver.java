@@ -39,6 +39,8 @@ public final class AeroObserver {
         default boolean summaryLoggingEnabled() { return false; }
         default boolean hasPatchViewers() { return false; }
         default boolean enabled() { return false; }
+        default boolean wantsRawQuery(net.minecraft.server.level.ServerLevel level) { return false; }
+        default void rawQuery(net.minecraft.server.level.ServerLevel level, Object... fields) {}
         default void event(ServerSubLevel body, String type, Object... fields) {  }
         default void profile(ServerSubLevel body, AeroSurfaceCache.AerodynamicProfile profile, java.util.List<AeroSurfaceCache.ProfileFace> selected) {  }
         default void face(ServerSubLevel body, String decision, AeroSurfaceCache.ProfileFace face, Vec3 point, Vec3 normal, double margin) {  }
@@ -70,6 +72,14 @@ public final class AeroObserver {
     public static boolean enabled() {
         try { return observer.enabled(); }
         catch (RuntimeException | LinkageError failure) { disable(failure); return false; }
+    }
+    public static boolean wantsRawQuery(net.minecraft.server.level.ServerLevel level) {
+        try { return observer.wantsRawQuery(level); }
+        catch (RuntimeException | LinkageError failure) { disable(failure); return false; }
+    }
+    public static void rawQuery(net.minecraft.server.level.ServerLevel level, Object... fields) {
+        try { observer.rawQuery(level, fields); }
+        catch (RuntimeException | LinkageError failure) { disable(failure); }
     }
     public static void event(ServerSubLevel body, String type, Object... fields) {
         try { observer.event(body, type, fields); }

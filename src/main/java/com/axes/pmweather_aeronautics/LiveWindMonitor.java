@@ -93,7 +93,6 @@ public final class LiveWindMonitor {
         if (pmivOwnsMonitor()) return;
         event.getDispatcher().register(Commands.literal("aerowind")
             .then(Commands.literal("live")
-                .executes(context -> reportLiveStatus())
                 .then(Commands.literal("on").executes(context -> setLive(true)))
                 .then(Commands.literal("off").executes(context -> setLive(false))))
             .then(Commands.literal("wind").executes(context -> reportWind()))
@@ -118,14 +117,11 @@ public final class LiveWindMonitor {
     private static LiteralArgumentBuilder<CommandSourceStack> commandRoot(String root) {
         return Commands.literal(root)
             .then(liveCommand())
-            .then(Commands.literal("wind").executes(context -> reportWind())
-                // Compatibility alias for the former nested command.
-                .then(liveCommand()));
+            .then(Commands.literal("wind").executes(context -> reportWind()));
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> liveCommand() {
         return Commands.literal("live")
-            .executes(context -> reportLiveStatus())
             .then(Commands.literal("on").executes(context -> setLive(true)))
             .then(Commands.literal("off").executes(context -> setLive(false)));
     }
@@ -170,15 +166,6 @@ public final class LiveWindMonitor {
         }
         pendingReportId = nextRequestId;
         pendingReportTick = Minecraft.getInstance().level.getGameTime();
-        return 1;
-    }
-
-    private static int reportLiveStatus() {
-        sendMessage(
-            "Live wind display is " + (liveMonitoring ? "enabled." : "disabled.")
-                + " Use /pmaero live on|off.",
-            liveMonitoring ? ChatFormatting.GREEN : ChatFormatting.YELLOW
-        );
         return 1;
     }
 

@@ -11,7 +11,8 @@ import java.util.List;
  *
  * <p>The returned vectors remain in PMWeather's mph-style units until explicitly converted with
  * {@link #toPhysicsWind(Vec3)}.  Native combined X/Z and existing Y are retained. Supercell tornado Y evaluated
- * by the native engine is added separately because PMWeather 0.17.14-0.17.16 discards it.</p>
+ * by the native engine is added separately because PMWeather 0.17.14-0.17.16 discards it.
+ * PMWeather 0.16.4 already returns native vertical wind and receives no added Y.</p>
  *
  * <p>The external API is intentionally independent from PMAero's body-force tuning, sample budget,
  * temporal interpolation, mass scaling, and force caps.  A caller that already owns a same-tick
