@@ -413,7 +413,7 @@ public final class WeatherForceApplier {
                 AeroObserver.event(subLevel, "wheel_wind_breakaway", "windDemand", projectedWindDemand,
                         "aggregateGrip", totalGrip, "normalImpulse", contact.normalImpulse(),
                         "friction", contact.friction(), "originalTangent", originalTangent,
-                        "limitedTangent", limitedTangent, "correction", correction);
+                        "limitedTangent", new Vector3d(originalTangent).add(correction), "correction", correction);
             }
         }
     }
